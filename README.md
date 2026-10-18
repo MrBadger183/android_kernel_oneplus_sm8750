@@ -163,5 +163,5 @@ External Wi-Fi and CAN bus modules are provided in `BadgerHunter-OP13-NetHunter-
 * **KernelSU-Next Project** for modern, secure kernel-level su.
 * **simonsmh / SuSFS** for the revolutionary stealth root filesystem.
 * **Offensive Security / Kali NetHunter** for wireless injection patches.
-* **EvolutionX & SunOS Teams** for device tree and platform assistance.
+* **OnePlusOSS** / For the kernel manifest that brought all this about.
 * **MrBadger183** - Lead maintainer & developer.
