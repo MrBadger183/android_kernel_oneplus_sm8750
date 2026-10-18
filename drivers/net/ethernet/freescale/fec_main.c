@@ -695,12 +695,7 @@ static int fec_enet_txq_submit_skb(struct fec_enet_priv_tx_q *txq,
 	txq->bd.cur = bdp;
 
 	/* Trigger transmission start */
-	if (!(fep->quirks & FEC_QUIRK_ERR007885) ||
-	    !readl(txq->bd.reg_desc_active) ||
-	    !readl(txq->bd.reg_desc_active) ||
-	    !readl(txq->bd.reg_desc_active) ||
-	    !readl(txq->bd.reg_desc_active))
-		writel(0, txq->bd.reg_desc_active);
+	writel(0, txq->bd.reg_desc_active);
 
 	return 0;
 }
@@ -1079,29 +1074,6 @@ static void fec_enet_enable_ring(struct net_device *ndev)
 	}
 }
 
-/* Whack a reset.  We should wait for this.
- * For i.MX6SX SOC, enet use AXI bus, we use disable MAC
- * instead of reset MAC itself.
- */
-static void fec_ctrl_reset(struct fec_enet_private *fep, bool allow_wol)
-{
-	u32 val;
-
-	if (!allow_wol || !(fep->wol_flag & FEC_WOL_FLAG_SLEEP_ON)) {
-		if (fep->quirks & FEC_QUIRK_HAS_MULTI_QUEUES ||
-		    ((fep->quirks & FEC_QUIRK_NO_HARD_RESET) && fep->link)) {
-			writel(0, fep->hwp + FEC_ECNTRL);
-		} else {
-			writel(FEC_ECR_RESET, fep->hwp + FEC_ECNTRL);
-			udelay(10);
-		}
-	} else {
-		val = readl(fep->hwp + FEC_ECNTRL);
-		val |= (FEC_ECR_MAGICEN | FEC_ECR_SLEEP);
-		writel(val, fep->hwp + FEC_ECNTRL);
-	}
-}
-
 /*
  * This function is called to start or restart the FEC during a link
  * change, transmit timeout, or to reconfigure the FEC.  The network
@@ -1118,7 +1090,17 @@ fec_restart(struct net_device *ndev)
 	if (fep->bufdesc_ex)
 		fec_ptp_save_state(fep);
 
-	fec_ctrl_reset(fep, false);
+	/* Whack a reset.  We should wait for this.
+	 * For i.MX6SX SOC, enet use AXI bus, we use disable MAC
+	 * instead of reset MAC itself.
+	 */
+	if (fep->quirks & FEC_QUIRK_HAS_MULTI_QUEUES ||
+	    ((fep->quirks & FEC_QUIRK_NO_HARD_RESET) && fep->link)) {
+		writel(0, fep->hwp + FEC_ECNTRL);
+	} else {
+		writel(1, fep->hwp + FEC_ECNTRL);
+		udelay(10);
+	}
 
 	/*
 	 * enet-mac reset will reset mac address registers too,
@@ -1372,7 +1354,22 @@ fec_stop(struct net_device *ndev)
 	if (fep->bufdesc_ex)
 		fec_ptp_save_state(fep);
 
-	fec_ctrl_reset(fep, true);
+	/* Whack a reset.  We should wait for this.
+	 * For i.MX6SX SOC, enet use AXI bus, we use disable MAC
+	 * instead of reset MAC itself.
+	 */
+	if (!(fep->wol_flag & FEC_WOL_FLAG_SLEEP_ON)) {
+		if (fep->quirks & FEC_QUIRK_HAS_MULTI_QUEUES) {
+			writel(0, fep->hwp + FEC_ECNTRL);
+		} else {
+			writel(FEC_ECR_RESET, fep->hwp + FEC_ECNTRL);
+			udelay(10);
+		}
+	} else {
+		val = readl(fep->hwp + FEC_ECNTRL);
+		val |= (FEC_ECR_MAGICEN | FEC_ECR_SLEEP);
+		writel(val, fep->hwp + FEC_ECNTRL);
+	}
 	writel(fep->phy_speed, fep->hwp + FEC_MII_SPEED);
 	writel(FEC_DEFAULT_IMASK, fep->hwp + FEC_IMASK);
 
@@ -3069,25 +3066,27 @@ static int fec_enet_us_to_itr_clock(struct net_device *ndev, int us)
 static void fec_enet_itr_coal_set(struct net_device *ndev)
 {
 	struct fec_enet_private *fep = netdev_priv(ndev);
-	u32 rx_itr = 0, tx_itr = 0;
-	int rx_ictt, tx_ictt;
+	int rx_itr, tx_itr;
 
-	rx_ictt = fec_enet_us_to_itr_clock(ndev, fep->rx_time_itr);
-	tx_ictt = fec_enet_us_to_itr_clock(ndev, fep->tx_time_itr);
+	/* Must be greater than zero to avoid unpredictable behavior */
+	if (!fep->rx_time_itr || !fep->rx_pkts_itr ||
+	    !fep->tx_time_itr || !fep->tx_pkts_itr)
+		return;
 
-	if (rx_ictt > 0 && fep->rx_pkts_itr > 1) {
-		/* Enable with enet system clock as Interrupt Coalescing timer Clock Source */
-		rx_itr = FEC_ITR_EN | FEC_ITR_CLK_SEL;
-		rx_itr |= FEC_ITR_ICFT(fep->rx_pkts_itr);
-		rx_itr |= FEC_ITR_ICTT(rx_ictt);
-	}
+	/* Select enet system clock as Interrupt Coalescing
+	 * timer Clock Source
+	 */
+	rx_itr = FEC_ITR_CLK_SEL;
+	tx_itr = FEC_ITR_CLK_SEL;
 
-	if (tx_ictt > 0 && fep->tx_pkts_itr > 1) {
-		/* Enable with enet system clock as Interrupt Coalescing timer Clock Source */
-		tx_itr = FEC_ITR_EN | FEC_ITR_CLK_SEL;
-		tx_itr |= FEC_ITR_ICFT(fep->tx_pkts_itr);
-		tx_itr |= FEC_ITR_ICTT(tx_ictt);
-	}
+	/* set ICFT and ICTT */
+	rx_itr |= FEC_ITR_ICFT(fep->rx_pkts_itr);
+	rx_itr |= FEC_ITR_ICTT(fec_enet_us_to_itr_clock(ndev, fep->rx_time_itr));
+	tx_itr |= FEC_ITR_ICFT(fep->tx_pkts_itr);
+	tx_itr |= FEC_ITR_ICTT(fec_enet_us_to_itr_clock(ndev, fep->tx_time_itr));
+
+	rx_itr |= FEC_ITR_EN;
+	tx_itr |= FEC_ITR_EN;
 
 	writel(tx_itr, fep->hwp + FEC_TXIC0);
 	writel(rx_itr, fep->hwp + FEC_RXIC0);

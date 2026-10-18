@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # SPDX-License-Identifier: GPL-2.0-only
-# Copyright (c) 2022-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
 
 import argparse
 import errno
@@ -12,8 +12,7 @@ import sys
 import subprocess
 
 HOST_TARGETS = ["dtc"]
-PHONY_TARGETS = ["16k"]
-DEFAULT_SKIP_LIST = ["abi"]
+DEFAULT_SKIP_LIST = ["abi", "abl"]
 MSM_EXTENSIONS = "build/msm_kernel_extensions.bzl"
 ABL_EXTENSIONS = "build/abl_extensions.bzl"
 DEFAULT_MSM_EXTENSIONS_SRC = "../msm-kernel/msm_kernel_extensions.bzl"
@@ -63,7 +62,6 @@ class BazelBuilder:
     """Helper class for building with Bazel"""
 
     def __init__(self, target_list, skip_list, out_dir, cache_dir, dry_run, gki_headers, user_opts):
-        BazelBuilder.targets_done = []
         self.workspace = os.path.realpath(
             os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
         )
@@ -138,18 +136,18 @@ class BazelBuilder:
                     sys.exit(1)
 
                 skip_list_re = [
-                    re.compile(r"//{}:{}[^-]*_.*_{}_dist".format(self.kernel_dir, t, s))
+                    re.compile(r"//{}:{}_.*_{}_dist".format(self.kernel_dir, t, s))
                     for s in self.skip_list
                 ]
-                query = 'filter("{}[^-]*_.*_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
+                query = 'filter("{}_.*_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
                     t, self.kernel_dir
                 )
             else:
                 skip_list_re = [
-                    re.compile(r"//{}:{}[^-]*_{}_{}_dist".format(self.kernel_dir, t, v, s))
+                    re.compile(r"//{}:{}_{}_{}_dist".format(self.kernel_dir, t, v, s))
                     for s in self.skip_list
                 ]
-                query = 'filter("{}[^-]*_{}.*_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
+                query = 'filter("{}_{}.*_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
                     t, v, self.kernel_dir
                 )
 
@@ -190,7 +188,7 @@ class BazelBuilder:
 
                 if v == "ALL":
                     real_variant = re.search(
-                        r"//{}:[^_]*_([^_]+)_".format(self.kernel_dir), label
+                        r"//{}:{}_([^_]+)_".format(self.kernel_dir, t), label
                     ).group(1)
                 else:
                     real_variant = v
@@ -227,91 +225,7 @@ class BazelBuilder:
         bazel_target_opts=None,
     ):
         """Execute a bazel command"""
-        if os.environ.get("BAZEL_BUILD_TRACER"):
-            pkg_path = os.environ.get("PATH_TO_FILER")
-            curr_targets = [t.bazel_label for t in targets]
-            num_targets_done = len(BazelBuilder.targets_done)
-            if extra_options is None:
-                extra_options = ['--sandbox_debug', '--noreuse_sandbox_directories']
-            if '--sandbox_debug' not in extra_options:
-                extra_options = extra_options + ['--sandbox_debug']
-            if '--noreuse_sandbox_directories' not in extra_options:
-                extra_options = extra_options + ['--noreuse_sandbox_directories']
-            logging.info('Under a build tracer')
-            logging.info("self.bazel_cache = %s" % (self.bazel_cache))
-            logging.info("self.workspace = %s" % (self.workspace))
-            logging.info("self.bazel_bin = %s" % (self.bazel_bin))
-            if num_targets_done == 0:
-                logging.info('No target built so far')
-                extra_options = extra_options + ['--discard_analysis_cache']
-                cmds_with_outputs = [\
-                        [self.bazel_bin, self.bazel_cache, 'version'], \
-                        ['find', self.bazel_cache.split("=")[1], '-name', 'A-server.jar', '-print'], \
-                        ['find', self.bazel_cache.split("=")[1], '-type', 'f', '-name', 'java', '-print'], \
-                        ]
-                outputs = []
-                for o_cmd in cmds_with_outputs:
-                    try:
-                        logging.info('Running "%s"', " ".join(o_cmd))
-                        cmd_proc = subprocess.Popen(o_cmd, cwd=self.workspace, stdout=subprocess.PIPE)
-                        self.process_list.append(cmd_proc)
-                        outputs.append([l.decode("utf-8") for l in cmd_proc.stdout.read().splitlines()])
-                    except Exception as e:
-                        logging.error('Command Failed: "%s"', " ".join(o_cmd))
-                        logging.error(e)
-                        sys.exit(1)
-                    self.process_list.remove(cmd_proc)
-                bazel_version = outputs[0][0].split(':')[1].strip()
-                aserver_path = outputs[1][0]
-                java_path = outputs[2][0]
-                logging.info('Bazel Version = %s', bazel_version)
-                logging.info('Absolute Path to A-server.jar is "%s"' % aserver_path)
-                logging.info('Absolute Path to java is "%s"' % java_path)
-                if bazel_version < '7.1.1':
-                    inst_branch = 'kp3'
-                elif bazel_version < '7.2.1':
-                    inst_branch = 'kp4'
-                else:
-                    inst_branch = 'kp5'
-                if os.path.isfile('%s/kernel_platform/prebuilts/jdk/jdk11/linux-x86/bin/java' % (self.workspace)):
-                    repo_path = self.workspace
-                else:
-                    repo_path = '%s/..' % (self.workspace)
-                commands = [ \
-                        'cp -R %s/%s %s' % (pkg_path, inst_branch, repo_path),
-                        'tar xfz %s/%s --directory %s' % (pkg_path, os.environ.get("JPKG"), repo_path),
-                        'mkdir -p %s/aspectj-1.9' % (repo_path),
-                        '%s/%s -jar %s/aspectj-1.9.22.1.jar -to %s/aspectj-1.9' % (repo_path, os.environ.get("JBIN"), pkg_path, repo_path), \
-                        '%s/aspectj-1.9/bin/ajc -1.9 -cp %s:%s/aspectj-1.9/lib/aspectjrt.jar -outxml -outjar %s/aspectskp.jar %s/%s/aspectinstrumentation.java' % \
-                        (repo_path, aserver_path, repo_path, repo_path, repo_path, inst_branch), \
-                        '%s/%s/instrument.sh %s %s/aspectj-1.9/lib %s/aspectskp.jar' % (repo_path, inst_branch, repo_path, repo_path, repo_path),
-                        'touch -d "10 years" %s/prebuilts/jdk/jdk11/linux-x86/bin/java' % (self.workspace),
-                        " ".join([self.bazel_bin, self.bazel_cache, 'shutdown']),
-                        'cp %s %s_original' % (java_path, java_path),
-                        'cp %s/prebuilts/jdk/jdk11/linux-x86/bin/java %s' % (self.workspace, java_path),
-                        'touch -d "10 years" %s' % (java_path),
-                        ]
-                for i, cmd in enumerate(commands):
-                    logging.info('Running command %d : "%s"', i, cmd)
-                    try:
-                        if i == 5:
-                            run_dir = '%s/%s' % (repo_path, inst_branch)
-                        else:
-                            run_dir = self.workspace
-                        cmd_proc = subprocess.Popen(cmd, cwd=run_dir, shell=True)
-                        self.process_list.append(cmd_proc)
-                        cmd_proc.wait()
-                        if cmd_proc.returncode != 0:
-                            sys.exit(cmd_proc.returncode)
-                    except Exception as e:
-                        logging.error(e)
-                        sys.exit(1)
-            else:
-                logging.info('Re-entering this function; Hence instrumentation is already done')
-            cmdline = [self.bazel_bin, "--max_idle_secs=%s" % (os.environ.get("IDLE_TIMEOUT")), self.bazel_cache, bazel_subcommand]
-        else:
-            cmdline = [self.bazel_bin, self.bazel_cache, bazel_subcommand]
-        logging.info('targets = "%s"', [t.bazel_label for t in targets])
+        cmdline = [self.bazel_bin, self.bazel_cache, bazel_subcommand]
         if extra_options:
             cmdline.extend(extra_options)
         cmdline.extend([t.bazel_label for t in targets])
@@ -330,7 +244,6 @@ class BazelBuilder:
             logging.error(e)
             sys.exit(1)
 
-        BazelBuilder.targets_done.extend([t.bazel_label for t in targets])
         self.process_list.remove(build_proc)
 
     def build_targets(self, targets):
@@ -343,15 +256,9 @@ class BazelBuilder:
             # Set the output directory based on if it's a host target
             if any(
                 re.match(r"//{}:.*_{}_dist".format(self.kernel_dir, h), target.bazel_label)
-                for h in HOST_TARGETS
+                    for h in HOST_TARGETS
             ):
                 out_dir = target.get_out_dir("host")
-            elif any(
-                re.match(r"//{}:.*{}.*_dist".format(self.kernel_dir, t), target.bazel_label)
-                for t in PHONY_TARGETS
-            ):
-                out_dir = target.get_out_dir() + "16k"
-                out_dir = os.path.join(out_dir, "dist")
             else:
                 out_dir = target.get_out_dir("dist")
             self.bazel(
@@ -387,22 +294,18 @@ class BazelBuilder:
             self.user_opts.extend(["--//msm-kernel:skip_{}=true".format(s) for s in self.skip_list])
 
         self.user_opts.extend([
+            "--config=stamp",
             "--user_kmi_symbol_lists=//msm-kernel:android/abi_gki_aarch64_qcom",
             "--ignore_missing_projects",
             "--incompatible_sandbox_hermetic_tmp=false",
             "--nozstd_dwarf_compression",
+            "--notrim",
+            "--nokmi_symbol_list_strict_mode",
+            "--allow_undeclared_modules",
         ])
 
         if self.dry_run:
             self.user_opts.append("--nobuild")
-
-        # List of files to avoid symbolic link creation
-        avoid_symlink_files = [
-        "drivers/block/zram/zcomp.h",
-        "drivers/block/zram/zram_drv.h",
-        "include/linux/zsmalloc.h",
-        "include/linux/ieee80211.h",
-        ]
 
         try:
             if self.gki_headers:
@@ -413,16 +316,11 @@ class BazelBuilder:
                 msm_d = os.path.join(self.workspace, "msm-kernel")
                 for f in gki_files:
                     if ".h" in f:
-                        f=f.strip()
-                        if f in avoid_symlink_files:
-                            logging.info('Skipping symbolic link creation for %s', f)
-                            continue
-
                         logging.info('GKI header file...%s', f)
+                        f=f.strip()
                         common_f = os.path.join(common_d, f)
                         msm_f = os.path.join(msm_d, f)
-                        if os.path.exists(msm_f):
-                            os.remove(msm_f)
+                        os.remove(msm_f)
                         os.symlink(common_f, msm_f)
                 gki_f.close()
 
@@ -478,7 +376,7 @@ def main():
     parser.add_argument(
         "--log",
         metavar="LEVEL",
-        default="info",
+        default="debug",
         choices=["debug", "info", "warning", "error"],
         help="Log level (debug, info, warning, error)",
     )

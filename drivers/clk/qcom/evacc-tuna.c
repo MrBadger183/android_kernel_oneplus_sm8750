@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /*
- * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -413,8 +413,6 @@ MODULE_DEVICE_TABLE(of, eva_cc_tuna_match_table);
 
 static int eva_cc_tuna_probe(struct platform_device *pdev)
 {
-	unsigned int dly_accu_mask = 0x1f << 21;
-	unsigned int dly_accu_val = 0x1d << 21;
 	struct regmap *regmap;
 	int ret;
 
@@ -432,7 +430,6 @@ static int eva_cc_tuna_probe(struct platform_device *pdev)
 
 	clk_lucid_ole_pll_configure(&eva_cc_pll0, regmap, &eva_cc_pll0_config);
 
-	regmap_update_bits(regmap, 0x9f24, BIT(0), BIT(0));
 	/*
 	 * Keep clocks always enabled:
 	 *	eva_cc_ahb_clk
@@ -442,10 +439,6 @@ static int eva_cc_tuna_probe(struct platform_device *pdev)
 	regmap_update_bits(regmap, 0x80a4, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0x80f8, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0x80d4, BIT(0), BIT(0));
-
-	/* Change DLY_ACCU_RED_SHIFTER_DONE to d'13 for mvs0, mvs0c */
-	regmap_update_bits(regmap, 0x8074, dly_accu_mask, dly_accu_val);
-	regmap_update_bits(regmap, 0x8040, dly_accu_mask, dly_accu_val);
 
 	ret = qcom_cc_really_probe(pdev, &eva_cc_tuna_desc, regmap);
 	if (ret) {

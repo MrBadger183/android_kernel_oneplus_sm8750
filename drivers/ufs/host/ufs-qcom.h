@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef UFS_QCOM_H_
@@ -16,9 +16,6 @@
 #include <ufs/ufshcd.h>
 #include <ufs/unipro.h>
 
-#if defined(CONFIG_UFSFEATURE)
-#include "ufsfeature.h"
-#endif
 #define MAX_UFS_QCOM_HOSTS	2
 #define MAX_U32                 (~(u32)0)
 #define MPHY_TX_FSM_STATE       0x41
@@ -248,6 +245,12 @@ enum ufs_qcom_phy_init_type {
 
 /* Device Quirks */
 /*
+ * Some ufs devices may need more time to be in hibern8 before exiting.
+ * Enable this quirk to give it an additional 100us.
+ */
+#define UFS_DEVICE_QUIRK_PA_HIBER8TIME          (1 << 15)
+
+/*
  * Some ufs device vendors need a different TSync length.
  * Enable this quirk to give an additional TX_HS_SYNC_LENGTH.
  */
@@ -461,20 +464,15 @@ struct ufs_qcom_regs {
 };
 
 /**
- * struct cpu_freq_info - keep cpu cluster's info
+ * struct cpu_freq_info - keep CPUs frequency info
  * @cpu: the cpu to bump up when requests on perf core exceeds the threshold
  * @min_cpu_scale_freq: the minimal frequency of the cpu
  * @max_cpu_scale_freq: the maximal frequency of the cpu
- * @default_cluster_mask : the deafault cluster mask
- * @available_cluster_mask: the available cluster mask
  */
 struct cpu_freq_info {
-	u32 first_cpu;
-	u32 last_cpu;
+	u32 cpu;
 	unsigned int min_cpu_scale_freq;
 	unsigned int max_cpu_scale_freq;
-	cpumask_t default_cluster_mask;
-	cpumask_t available_cluster_mask;
 };
 
 struct ufs_qcom_dev_params {
@@ -524,7 +522,7 @@ struct ufs_qcom_host {
 	 */
 	#define UFS_QCOM_CAP_SHARED_ICE BIT(4)
 	u32 caps;
-	bool disable_ah8;
+
 	struct phy *generic_phy;
 	struct ufs_hba *hba;
 	struct ufs_qcom_bus_vote bus_vote;
@@ -564,14 +562,14 @@ struct ufs_qcom_host {
 	bool disable_lpm;
 
 	bool vdd_hba_pc;
-	bool ufs_gen_type;
 	struct notifier_block vdd_hba_reg_nb;
 
 	struct ufs_vreg *vddp_ref_clk;
-	struct ufs_vreg *parent_vreg;
+	struct ufs_vreg *vccq_parent;
 	struct ufs_vreg *vccq_proxy_client;
 	bool work_pending;
 	bool bypass_g4_cfgready;
+	bool is_dt_pm_level_read;
 	bool is_phy_pwr_on;
 	/* Protect the usage of is_phy_pwr_on against racing */
 	struct mutex phy_mutex;
@@ -583,8 +581,8 @@ struct ufs_qcom_host {
 	atomic_t scale_up;
 	atomic_t clks_on;
 	unsigned long load_delay_ms;
-#define NUM_REQS_HIGH_THRESH 128
-#define NUM_REQS_LOW_THRESH 64
+#define NUM_REQS_HIGH_THRESH 64
+#define NUM_REQS_LOW_THRESH 32
 	atomic_t num_reqs_threshold;
 	bool cur_freq_vote;
 	struct delayed_work fwork;
@@ -603,20 +601,13 @@ struct ufs_qcom_host {
 	atomic_t therm_mitigation;
 	cpumask_t perf_mask;
 	cpumask_t def_mask;
-	cpumask_t esi_mask;
 	u32 *esi_affinity_mask;
-	cpumask_t qos_perf_mask;
-	cpumask_t qos_non_perf_mask;
-	bool is_qultivate_support;
-#define MAX_NUM_CLUSTERS 4
 	bool disable_wb_support;
 	struct ufs_qcom_ber_hist ber_hist[UFS_QCOM_BER_MODE_MAX];
 	struct list_head regs_list_head;
 	bool ber_th_exceeded;
 	bool irq_affinity_support;
 	bool esi_enabled;
-	bool enforce_high_irq_cpus;
-	bool cap_hs_gear_limit;
 
 	bool bypass_pbl_rst_wa;
 	atomic_t cqhp_update_pending;
@@ -626,12 +617,6 @@ struct ufs_qcom_host {
 	unsigned long active_cmds;
 	u32 hs_gear;
 	u32 max_cpus;
-	unsigned int boost_monitor_timer;
-	u32 min_boost_thres;
-	u32 max_boost_thres;
-#if defined(CONFIG_UFSFEATURE)
-	struct ufsf_feature ufsf;
-#endif
 };
 
 static inline u32
@@ -764,12 +749,4 @@ static inline void ufs_qcom_ice_debug(struct ufs_qcom_host *host)
 }
 #endif /* !CONFIG_SCSI_UFS_CRYPTO */
 
-#if defined(CONFIG_UFSFEATURE)
-static inline struct ufsf_feature *ufs_qcom_get_ufsf(struct ufs_hba *hba)
-{
-	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
-
-	return &host->ufsf;
-}
-#endif
 #endif /* UFS_QCOM_H_ */

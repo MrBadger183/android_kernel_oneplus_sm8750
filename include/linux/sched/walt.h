@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _LINUX_SCHED_WALT_H
@@ -161,14 +161,6 @@ struct walt_task_struct {
 	u8				yield_state;
 	u16				busy_bitmap;
 	u32				period_contrib_run;
-	u64				yield_ts;
-	u64				yield_total_sleep_usec;
-	s64				lst_tgt_ns;
-	u32				lst_state_counter;
-	unsigned int			continuous_active;
-	bool				lst;
-	u32				pipeline_activity_cnt;
-	atomic_t			event_windows;
 };
 
 #define wts_to_ts(wts) ({ \
@@ -209,9 +201,6 @@ extern int walt_set_cpus_taken(struct cpumask *set);
 extern int walt_unset_cpus_taken(struct cpumask *unset);
 extern cpumask_t walt_get_cpus_taken(void);
 extern int walt_get_cpus_in_state1(struct cpumask *cpus);
-extern int walt_set_enforce_high_irq_cpus(struct cpumask *set);
-extern int walt_unset_enforce_high_irq_cpus(struct cpumask *unset);
-cpumask_t walt_get_enforce_high_irq_cpus(void);
 
 extern void sched_walt_oscillate(unsigned int busy_cpu);
 extern int walt_pause_cpus(struct cpumask *cpus, enum pause_client client);
@@ -302,22 +291,6 @@ static inline bool should_boost_bus_dcvs(void)
 }
 
 static inline cpumask_t walt_get_halted_cpus(void)
-{
-	cpumask_t t = { CPU_BITS_NONE };
-	return t;
-}
-
-static inline int walt_set_enforce_high_irq_cpus(struct cpumask *set)
-{
-	return -EINVAL;
-}
-
-static inline int walt_unset_enforce_high_irq_cpus(struct cpumask *unset)
-{
-	return -EINVAL;
-}
-
-static inline cpumask_t walt_get_enforce_high_irq_cpus(void)
 {
 	cpumask_t t = { CPU_BITS_NONE };
 	return t;

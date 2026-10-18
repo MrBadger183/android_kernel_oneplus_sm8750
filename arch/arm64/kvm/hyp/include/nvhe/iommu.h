@@ -6,7 +6,6 @@
 
 #include <kvm/iommu.h>
 #include <linux/io-pgtable.h>
-#include <nvhe/spinlock.h>
 
 #if IS_ENABLED(CONFIG_ARM_SMMU_V3_PKVM)
 #include <linux/io-pgtable-arm.h>
@@ -54,8 +53,6 @@ void kvm_iommu_iotlb_gather_add_page(struct kvm_hyp_iommu_domain *domain,
 void kvm_iommu_host_stage2_idmap(phys_addr_t start, phys_addr_t end,
 				 enum kvm_pgtable_prot prot);
 int kvm_iommu_snapshot_host_stage2(struct kvm_hyp_iommu_domain *domain);
-int kvm_iommu_iotlb_sync_map(pkvm_handle_t domain_id,
-			     unsigned long iova, size_t size);
 
 #define KVM_IOMMU_PADDR_CACHE_MAX		((size_t)511)
 /**
@@ -75,28 +72,6 @@ struct kvm_iommu_paddr_cache {
 
 void kvm_iommu_flush_unmap_cache(struct kvm_iommu_paddr_cache *cache);
 
-static inline hyp_spinlock_t *kvm_iommu_get_lock(struct kvm_hyp_iommu *iommu)
-{
-	/* See struct kvm_hyp_iommu */
-	BUILD_BUG_ON(sizeof(iommu->lock) != sizeof(hyp_spinlock_t));
-	return (hyp_spinlock_t *)(&iommu->lock);
-}
-
-static inline void kvm_iommu_lock_init(struct kvm_hyp_iommu *iommu)
-{
-	hyp_spin_lock_init(kvm_iommu_get_lock(iommu));
-}
-
-static inline void kvm_iommu_lock(struct kvm_hyp_iommu *iommu)
-{
-	hyp_spin_lock(kvm_iommu_get_lock(iommu));
-}
-
-static inline void kvm_iommu_unlock(struct kvm_hyp_iommu *iommu)
-{
-	hyp_spin_unlock(kvm_iommu_get_lock(iommu));
-}
-
 /**
  * struct kvm_iommu_ops - KVM iommu ops
  * @init: init the driver called once before the kernel de-privilege
@@ -114,7 +89,6 @@ static inline void kvm_iommu_unlock(struct kvm_hyp_iommu *iommu)
  * @map_pages: Map pages in a domain.
  * @unmap_pages: Unmap pages from a domain.
  * @iova_to_phys: get physical address from IOVA in a domain.
- * @iotlb_sync_map: Sync mapping created using @map_pages to the hardware.
  */
 struct kvm_iommu_ops {
 	int (*init)(unsigned long arg);
@@ -141,8 +115,7 @@ struct kvm_iommu_ops {
 			      struct iommu_iotlb_gather *gather,
 			      struct kvm_iommu_paddr_cache *cache);
 	phys_addr_t (*iova_to_phys)(struct kvm_hyp_iommu_domain *domain, unsigned long iova);
-	ANDROID_KABI_USE(1, int (*iotlb_sync_map)(struct kvm_hyp_iommu_domain *domain,
-						  unsigned long iova, size_t size));
+	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);

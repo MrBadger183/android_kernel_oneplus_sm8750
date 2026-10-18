@@ -59,6 +59,8 @@ struct ffs_ep {
 	struct usb_endpoint_descriptor	*descs[3];
 
 	u8				num;
+
+	int				status;	/* P: epfile->mutex */
 };
 
 /* Copied from f_fs.c */

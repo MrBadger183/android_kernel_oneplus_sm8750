@@ -146,9 +146,6 @@ static char *automount_fullpath(struct dentry *dentry, void *page)
 	}
 	spin_unlock(&tcon->tc_lock);
 
-	if (unlikely(!page))
-		return ERR_PTR(-ENOMEM);
-
 	s = dentry_path_raw(dentry, page, PATH_MAX);
 	if (IS_ERR(s))
 		return s;
@@ -260,7 +257,7 @@ static struct vfsmount *cifs_do_automount(struct path *path)
 		ctx->source = NULL;
 		goto out;
 	}
-	ctx->dfs_automount = ctx->dfs_conn = is_dfs_mount(mntpt);
+	ctx->dfs_automount = is_dfs_mount(mntpt);
 	cifs_dbg(FYI, "%s: ctx: source=%s UNC=%s prepath=%s dfs_automount=%d\n",
 		 __func__, ctx->source, ctx->UNC, ctx->prepath, ctx->dfs_automount);
 

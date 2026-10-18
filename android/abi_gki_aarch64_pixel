@@ -80,7 +80,6 @@
   __bitmap_or
   bitmap_parse
   bitmap_parselist
-  bitmap_parse_user
   bitmap_print_to_pagebuf
   bitmap_release_region
   __bitmap_set
@@ -378,9 +377,6 @@
   devfreq_recommended_opp
   devfreq_register_opp_notifier
   devfreq_remove_device
-  devfreq_remove_governor
-  devfreq_resume_device
-  devfreq_suspend_device
   devfreq_unregister_opp_notifier
   devfreq_update_interval
   __dev_fwnode
@@ -524,7 +520,6 @@
   devm_regulator_get_optional
   devm_regulator_put
   devm_regulator_register
-  devm_request_any_context_irq
   __devm_request_region
   devm_request_threaded_irq
   __devm_reset_control_bulk_get
@@ -886,7 +881,6 @@
   drm_mode_duplicate
   drm_mode_equal
   drm_mode_equal_no_clocks
-  drm_mode_is_420_only
   drm_mode_object_find
   drm_mode_object_get
   drm_mode_object_put
@@ -1036,7 +1030,6 @@
   frame_vector_create
   frame_vector_destroy
   frame_vector_to_pages
-  free_hyp_memcache
   free_iova_fast
   free_irq
   free_netdev
@@ -1633,7 +1626,6 @@
   __netdev_alloc_skb
   netdev_err
   netdev_info
-  netdev_refcnt_read
   netdev_set_default_ethtool_ops
   netdev_state_change
   netdev_update_features
@@ -1726,7 +1718,6 @@
   of_get_child_by_name
   of_get_compatible_child
   of_get_cpu_node
-  of_get_drm_panel_display_mode
   of_get_named_gpio
   of_get_next_available_child
   of_get_next_child
@@ -2279,7 +2270,6 @@
   set_capacity_and_notify
   set_cpus_allowed_ptr
   set_freezable
-  set_normalized_timespec64
   set_page_dirty
   set_page_dirty_lock
   __SetPageMovable
@@ -2368,7 +2358,6 @@
   snd_soc_add_dai_controls
   snd_soc_bytes_tlv_callback
   snd_soc_card_get_kcontrol
-  snd_soc_card_get_kcontrol_locked
   snd_soc_card_jack_new_pins
   snd_soc_component_disable_pin
   snd_soc_component_enable_pin
@@ -2624,7 +2613,6 @@
   touch_softlockup_watchdog
   trace_array_destroy
   trace_array_get_by_name
-  trace_array_get_by_name_ext
   trace_array_put
   trace_array_set_clr_event
   trace_event_buffer_commit
@@ -2667,18 +2655,14 @@
   __traceiter_android_rvh_select_task_rq_fair
   __traceiter_android_rvh_select_task_rq_rt
   __traceiter_android_rvh_set_cpus_allowed_by_task
-  __traceiter_android_rvh_set_cpus_allowed_ptr
   __traceiter_android_rvh_set_iowait
   __traceiter_android_rvh_setscheduler
   __traceiter_android_rvh_setscheduler_prio
   __traceiter_android_rvh_set_task_cpu
   __traceiter_android_rvh_set_user_nice_locked
-  __traceiter_android_rvh_swap_readpage_bdev_sync
   __traceiter_android_rvh_tick_entry
   __traceiter_android_rvh_try_to_wake_up_success
   __traceiter_android_rvh_uclamp_eff_get
-  __traceiter_android_rvh_ufs_complete_init
-  __traceiter_android_rvh_ufs_reprogram_all_keys
   __traceiter_android_rvh_update_blocked_fair
   __traceiter_android_rvh_update_load_avg
   __traceiter_android_rvh_update_misfit_status
@@ -2702,7 +2686,6 @@
   __traceiter_android_vh_early_resume_begin
   __traceiter_android_vh_enable_thermal_genl_check
   __traceiter_android_vh_ep_create_wakeup_source
-  __traceiter_android_vh_exit_check
   __traceiter_android_vh_filemap_get_folio
   __traceiter_android_vh_free_one_page_flag_check
   __traceiter_android_vh_free_pages_prepare_init
@@ -2739,7 +2722,6 @@
   __traceiter_android_vh_ufs_update_sysfs
   __traceiter_android_vh_usb_dev_resume
   __traceiter_android_vh_use_amu_fie
-  __traceiter_android_vh_xhci_full_reset_on_remove
   __traceiter_clock_set_rate
   __traceiter_cma_alloc_finish
   __traceiter_cma_alloc_start
@@ -2809,18 +2791,14 @@
   __tracepoint_android_rvh_select_task_rq_fair
   __tracepoint_android_rvh_select_task_rq_rt
   __tracepoint_android_rvh_set_cpus_allowed_by_task
-  __tracepoint_android_rvh_set_cpus_allowed_ptr
   __tracepoint_android_rvh_set_iowait
   __tracepoint_android_rvh_setscheduler
   __tracepoint_android_rvh_setscheduler_prio
   __tracepoint_android_rvh_set_task_cpu
   __tracepoint_android_rvh_set_user_nice_locked
-  __tracepoint_android_rvh_swap_readpage_bdev_sync
   __tracepoint_android_rvh_tick_entry
   __tracepoint_android_rvh_try_to_wake_up_success
   __tracepoint_android_rvh_uclamp_eff_get
-  __tracepoint_android_rvh_ufs_complete_init
-  __tracepoint_android_rvh_ufs_reprogram_all_keys
   __tracepoint_android_rvh_update_blocked_fair
   __tracepoint_android_rvh_update_load_avg
   __tracepoint_android_rvh_update_misfit_status
@@ -2844,7 +2822,6 @@
   __tracepoint_android_vh_early_resume_begin
   __tracepoint_android_vh_enable_thermal_genl_check
   __tracepoint_android_vh_ep_create_wakeup_source
-  __tracepoint_android_vh_exit_check
   __tracepoint_android_vh_filemap_get_folio
   __tracepoint_android_vh_free_one_page_flag_check
   __tracepoint_android_vh_free_pages_prepare_init
@@ -2881,7 +2858,6 @@
   __tracepoint_android_vh_ufs_update_sysfs
   __tracepoint_android_vh_usb_dev_resume
   __tracepoint_android_vh_use_amu_fie
-  __tracepoint_android_vh_xhci_full_reset_on_remove
   __tracepoint_clock_set_rate
   __tracepoint_cma_alloc_finish
   __tracepoint_cma_alloc_start

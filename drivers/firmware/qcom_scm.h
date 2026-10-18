@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2010-2015,2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __QCOM_SCM_INT_H
 #define __QCOM_SCM_INT_H
@@ -79,7 +79,7 @@ enum qcom_scm_wq_feature {
 struct qcom_scm;
 extern struct completion *qcom_scm_lookup_wq(struct qcom_scm *scm, u32 wq_ctx);
 extern void scm_waitq_flag_handler(struct completion *wq, u32 flags);
-extern int scm_get_wq_ctx(u32 *wq_ctx, u32 *flags, u32 *more_pending, bool multi_smc);
+extern int scm_get_wq_ctx(u32 *wq_ctx, u32 *flags, u32 *more_pending);
 extern bool qcom_scm_multi_call_allow(struct device *dev, bool multicall_allowed);
 
 #define SCM_SMC_FNID(s, c)	((((s) & 0xFF) << 8) | ((c) & 0xFF))
@@ -108,7 +108,6 @@ extern int scm_legacy_call(struct device *dev, const struct qcom_scm_desc *desc,
 #define QCOM_SCM_BOOT_SWITCH_MODE		0x0f
 #define QCOM_SCM_BOOT_SET_DLOAD_MODE	0x10
 #define QCOM_SCM_BOOT_CONFIG_CPU_ERRATA		0x12
-#define QCOM_SCM_QUSB2PHY_LVL_SHIFTER_CMD_ID    0x1B
 #define QCOM_SCM_BOOT_SET_REMOTE_STATE	0x0a
 #define QCOM_SCM_FLUSH_FLAG_MASK	0x3
 #define QCOM_SCM_BOOT_MAX_CPUS		4
@@ -205,7 +204,6 @@ extern int scm_legacy_call(struct device *dev, const struct qcom_scm_desc *desc,
 /* OEM Services and Function IDs */
 #define QCOM_SCM_SVC_OEM_POWER			0x09
 #define QCOM_SCM_OEM_POWER_REBOOT		0x22
-#define QCOM_SCM_OEM_POWER_CUSTOM_REBOOT	0x23
 
 /* GPU Service IDs */
 #define QCOM_SCM_SVC_GPU		0x28
@@ -216,7 +214,6 @@ extern int scm_legacy_call(struct device *dev, const struct qcom_scm_desc *desc,
 #define QCOM_SCM_QSEELOG_REGISTER		0x06
 #define QCOM_SCM_QUERY_ENCR_LOG_FEAT_ID		0x0b
 #define QCOM_SCM_REQUEST_ENCR_LOG_ID		0x0c
-#define QCOM_SCM_QUERY_LOG_STATUS		0x0F
 
 #define QCOM_SCM_SVC_SMCINVOKE			0x06
 #define QCOM_SCM_SMCINVOKE_INVOKE_LEGACY	0x00

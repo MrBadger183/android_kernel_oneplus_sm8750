@@ -1677,7 +1677,7 @@ int trace_get_user(struct trace_parser *parser, const char __user *ubuf,
 
 	ret = get_user(ch, ubuf++);
 	if (ret)
-		goto fail;
+		goto out;
 
 	read++;
 	cnt--;
@@ -1691,7 +1691,7 @@ int trace_get_user(struct trace_parser *parser, const char __user *ubuf,
 		while (cnt && isspace(ch)) {
 			ret = get_user(ch, ubuf++);
 			if (ret)
-				goto fail;
+				goto out;
 			read++;
 			cnt--;
 		}
@@ -1701,7 +1701,8 @@ int trace_get_user(struct trace_parser *parser, const char __user *ubuf,
 		/* only spaces were written */
 		if (isspace(ch) || !ch) {
 			*ppos += read;
-			return read;
+			ret = read;
+			goto out;
 		}
 	}
 
@@ -1711,12 +1712,11 @@ int trace_get_user(struct trace_parser *parser, const char __user *ubuf,
 			parser->buffer[parser->idx++] = ch;
 		else {
 			ret = -EINVAL;
-			goto fail;
+			goto out;
 		}
-
 		ret = get_user(ch, ubuf++);
 		if (ret)
-			goto fail;
+			goto out;
 		read++;
 		cnt--;
 	}
@@ -1732,13 +1732,13 @@ int trace_get_user(struct trace_parser *parser, const char __user *ubuf,
 		parser->buffer[parser->idx] = 0;
 	} else {
 		ret = -EINVAL;
-		goto fail;
+		goto out;
 	}
 
 	*ppos += read;
-	return read;
-fail:
-	trace_parser_fail(parser);
+	ret = read;
+
+out:
 	return ret;
 }
 
@@ -2227,10 +2227,10 @@ int __init register_tracer(struct tracer *type)
 	mutex_unlock(&trace_types_lock);
 
 	if (ret || !default_bootup_tracer)
-		return ret;
+		goto out_unlock;
 
 	if (strncmp(default_bootup_tracer, type->name, MAX_TRACER_SIZE))
-		return 0;
+		goto out_unlock;
 
 	printk(KERN_INFO "Starting tracer '%s'\n", type->name);
 	/* Do we want this tracer to start on bootup? */
@@ -2242,7 +2242,8 @@ int __init register_tracer(struct tracer *type)
 	/* disable other selftests, since this will break it. */
 	disable_tracing_selftest("running a tracer");
 
-	return 0;
+ out_unlock:
+	return ret;
 }
 
 static void tracing_reset_cpu(struct array_buffer *buf, int cpu)
@@ -3502,9 +3503,10 @@ out_nobuffer:
 }
 EXPORT_SYMBOL_GPL(trace_vbprintk);
 
-static __printf(3, 0)
-int __trace_array_vprintk(struct trace_buffer *buffer,
-			  unsigned long ip, const char *fmt, va_list args)
+__printf(3, 0)
+static int
+__trace_array_vprintk(struct trace_buffer *buffer,
+		      unsigned long ip, const char *fmt, va_list args)
 {
 	struct trace_event_call *call = &event_print;
 	struct ring_buffer_event *event;
@@ -3557,6 +3559,7 @@ out_nobuffer:
 	return len;
 }
 
+__printf(3, 0)
 int trace_array_vprintk(struct trace_array *tr,
 			unsigned long ip, const char *fmt, va_list args)
 {
@@ -3586,6 +3589,7 @@ int trace_array_vprintk(struct trace_array *tr,
  * Note, trace_array_init_printk() must be called on @tr before this
  * can be used.
  */
+__printf(3, 0)
 int trace_array_printk(struct trace_array *tr,
 		       unsigned long ip, const char *fmt, ...)
 {
@@ -3630,6 +3634,7 @@ int trace_array_init_printk(struct trace_array *tr)
 }
 EXPORT_SYMBOL_GPL(trace_array_init_printk);
 
+__printf(3, 4)
 int trace_array_printk_buf(struct trace_buffer *buffer,
 			   unsigned long ip, const char *fmt, ...)
 {
@@ -3645,6 +3650,7 @@ int trace_array_printk_buf(struct trace_buffer *buffer,
 	return ret;
 }
 
+__printf(2, 0)
 int trace_vprintk(unsigned long ip, const char *fmt, va_list args)
 {
 	return trace_array_vprintk(&global_trace, ip, fmt, args);
@@ -7146,14 +7152,13 @@ static ssize_t tracing_splice_read_pipe(struct file *filp,
 		/* Copy the data into the page, so we can start over. */
 		ret = trace_seq_to_buffer(&iter->seq,
 					  page_address(spd.pages[i]),
-					  min((size_t)trace_seq_used(&iter->seq),
-						  (size_t)PAGE_SIZE));
+					  trace_seq_used(&iter->seq));
 		if (ret < 0) {
 			__free_page(spd.pages[i]);
 			break;
 		}
 		spd.partial[i].offset = 0;
-		spd.partial[i].len = ret;
+		spd.partial[i].len = trace_seq_used(&iter->seq);
 
 		trace_seq_init(&iter->seq);
 	}
@@ -8858,10 +8863,11 @@ ftrace_trace_snapshot_callback(struct trace_array *tr, struct ftrace_hash *hash,
  out_reg:
 	ret = tracing_alloc_snapshot_instance(tr);
 	if (ret < 0)
-		return ret;
+		goto out;
 
 	ret = register_ftrace_function_probe(glob, tr, ops, count);
 
+ out:
 	return ret < 0 ? ret : 0;
 }
 
@@ -9536,19 +9542,16 @@ static int trace_array_create_dir(struct trace_array *tr)
 	return ret;
 }
 
-static struct trace_array *
-trace_array_create_systems(const char *name, const char *systems)
+static struct trace_array *trace_array_create(const char *name)
 {
-	struct trace_array_ext *tr_ext;
 	struct trace_array *tr;
 	int ret;
 
 	ret = -ENOMEM;
-	tr_ext = kzalloc(sizeof(*tr_ext), GFP_KERNEL);
-	if (!tr_ext)
+	tr = kzalloc(sizeof(*tr), GFP_KERNEL);
+	if (!tr)
 		return ERR_PTR(ret);
 
-	tr = &tr_ext->trace_array;
 	tr->name = kstrdup(name, GFP_KERNEL);
 	if (!tr->name)
 		goto out_free_tr;
@@ -9558,12 +9561,6 @@ trace_array_create_systems(const char *name, const char *systems)
 
 	if (!zalloc_cpumask_var(&tr->pipe_cpumask, GFP_KERNEL))
 		goto out_free_tr;
-
-	if (systems) {
-		tr_ext->system_names = kstrdup_const(systems, GFP_KERNEL);
-		if (!tr_ext->system_names)
-			goto out_free_tr;
-	}
 
 	tr->trace_flags = global_trace.trace_flags & ~ZEROED_TRACE_FLAGS;
 
@@ -9608,16 +9605,10 @@ trace_array_create_systems(const char *name, const char *systems)
 	free_trace_buffers(tr);
 	free_cpumask_var(tr->pipe_cpumask);
 	free_cpumask_var(tr->tracing_cpumask);
-	kfree_const(tr_ext->system_names);
 	kfree(tr->name);
-	kfree(tr_ext);
+	kfree(tr);
 
 	return ERR_PTR(ret);
-}
-
-static struct trace_array *trace_array_create(const char *name)
-{
-	return trace_array_create_systems(name, NULL);
 }
 
 static int instance_mkdir(const char *name)
@@ -9642,27 +9633,9 @@ out_unlock:
 	return ret;
 }
 
-const char *trace_array_get_system_names(struct trace_array *tr)
-{
-	struct trace_array_ext *tr_ext;
-
-	if (tr == &global_trace)
-		return NULL;
-
-	tr_ext = container_of(tr, struct trace_array_ext, trace_array);
-	return tr_ext->system_names;
-}
-
-struct trace_array *trace_array_get_by_name(const char *name)
-{
-	return trace_array_get_by_name_ext(name, NULL);
-}
-EXPORT_SYMBOL_GPL(trace_array_get_by_name);
-
 /**
- * trace_array_get_by_name_ext - Create/Lookup a trace array, given its name.
+ * trace_array_get_by_name - Create/Lookup a trace array, given its name.
  * @name: The name of the trace array to be looked up/created.
- * @systems: A list of systems to create event directories for (NULL for all)
  *
  * Returns pointer to trace array with given name.
  * NULL, if it cannot be created.
@@ -9676,8 +9649,7 @@ EXPORT_SYMBOL_GPL(trace_array_get_by_name);
  * trace_array_put() is called, user space can not delete it.
  *
  */
-struct trace_array *trace_array_get_by_name_ext(const char *name,
-						const char *systems)
+struct trace_array *trace_array_get_by_name(const char *name)
 {
 	struct trace_array *tr;
 
@@ -9689,7 +9661,7 @@ struct trace_array *trace_array_get_by_name_ext(const char *name,
 			goto out_unlock;
 	}
 
-	tr = trace_array_create_systems(name, systems);
+	tr = trace_array_create(name);
 
 	if (IS_ERR(tr))
 		tr = NULL;
@@ -9701,14 +9673,11 @@ out_unlock:
 	mutex_unlock(&event_mutex);
 	return tr;
 }
-EXPORT_SYMBOL_GPL(trace_array_get_by_name_ext);
+EXPORT_SYMBOL_GPL(trace_array_get_by_name);
 
 static int __remove_instance(struct trace_array *tr)
 {
 	int i;
-	struct trace_array_ext *tr_ext = container_of(tr,
-						      struct trace_array_ext,
-						      trace_array);
 
 	/* Reference counter for a newly created trace array = 1. */
 	if (tr->ref > 1 || (tr->current_trace && tr->trace_ref))
@@ -9739,9 +9708,8 @@ static int __remove_instance(struct trace_array *tr)
 
 	free_cpumask_var(tr->pipe_cpumask);
 	free_cpumask_var(tr->tracing_cpumask);
-	kfree_const(tr_ext->system_names);
 	kfree(tr->name);
-	kfree(tr_ext);
+	kfree(tr);
 
 	return 0;
 }
@@ -10326,10 +10294,10 @@ static void ftrace_dump_one(struct trace_array *tr, enum ftrace_dump_mode dump_m
 			ret = print_trace_line(&iter);
 			if (ret != TRACE_TYPE_NO_CONSUME)
 				trace_consume(&iter);
-
-			trace_printk_seq(&iter.seq);
 		}
 		touch_nmi_watchdog();
+
+		trace_printk_seq(&iter.seq);
 	}
 
 	if (!cnt)
@@ -10576,7 +10544,7 @@ __init static int tracer_alloc_buffers(void)
 	BUILD_BUG_ON(TRACE_ITER_LAST_BIT > TRACE_FLAGS_MAX_SIZE);
 
 	if (!alloc_cpumask_var(&tracing_buffer_mask, GFP_KERNEL))
-		return -ENOMEM;
+		goto out;
 
 	if (!alloc_cpumask_var(&global_trace.tracing_cpumask, GFP_KERNEL))
 		goto out_free_buffer_mask;
@@ -10689,6 +10657,7 @@ out_free_cpumask:
 	free_cpumask_var(global_trace.tracing_cpumask);
 out_free_buffer_mask:
 	free_cpumask_var(tracing_buffer_mask);
+out:
 	return ret;
 }
 

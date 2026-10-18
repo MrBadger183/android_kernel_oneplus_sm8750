@@ -235,9 +235,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 				&allowed_algos);
 	violation_check = ((func == FILE_CHECK || func == MMAP_CHECK ||
 			    func == MMAP_CHECK_REQPROT) &&
-			   (ima_policy_flag & IMA_MEASURE) &&
-			   ((action & IMA_MEASURE) ||
-			    (file->f_mode & FMODE_WRITE)));
+			   (ima_policy_flag & IMA_MEASURE));
 	if (!action && !violation_check)
 		return 0;
 

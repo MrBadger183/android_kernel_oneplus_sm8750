@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -44,7 +44,7 @@ static const struct pll_vco rivian_elu_vco[] = {
 	{ 777000000, 1062000000, 1 },
 };
 
-static struct alpha_pll_config cam_bist_mclk_cc_pll0_config = {
+static const struct alpha_pll_config cam_bist_mclk_cc_pll0_config = {
 	.l = 0x32,
 	.cal_l = 0x32,
 	.alpha = 0x0,
@@ -99,7 +99,6 @@ static const struct clk_parent_data cam_bist_mclk_cc_parent_data_1_ao[] = {
 };
 
 static const struct freq_tbl ftbl_cam_bist_mclk_cc_mclk0_clk_src[] = {
-	F(12000000, P_CAM_BIST_MCLK_CC_PLL0_OUT_EVEN, 10, 1, 8),
 	F(19200000, P_BI_TCXO, 1, 0, 0),
 	F(24000000, P_CAM_BIST_MCLK_CC_PLL0_OUT_EVEN, 10, 1, 4),
 	F(68571429, P_CAM_BIST_MCLK_CC_PLL0_OUT_MAIN, 14, 0, 0),
@@ -495,25 +494,9 @@ static struct qcom_cc_desc cam_bist_mclk_cc_sun_desc = {
 
 static const struct of_device_id cam_bist_mclk_cc_sun_match_table[] = {
 	{ .compatible = "qcom,sun-cambistmclkcc" },
-	{ .compatible = "qcom,sun-cambistmclkcc-v2" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, cam_bist_mclk_cc_sun_match_table);
-
-static int cam_bist_mclk_cc_sun_fixup(struct platform_device *pdev, struct regmap *regmap)
-{
-	const char *compat = NULL;
-	int compatlen = 0;
-
-	compat = of_get_property(pdev->dev.of_node, "compatible", &compatlen);
-	if (!compat || compatlen <= 0)
-		return -EINVAL;
-
-	if (!strcmp(compat, "qcom,sun-cambistmclkcc-v2"))
-		cam_bist_mclk_cc_pll0_config.config_ctl_hi1_val = 0x1af04237;
-
-	return 0;
-}
 
 static int cam_bist_mclk_cc_sun_probe(struct platform_device *pdev)
 {
@@ -529,10 +512,6 @@ static int cam_bist_mclk_cc_sun_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = pm_runtime_get_sync(&pdev->dev);
-	if (ret)
-		return ret;
-
-	ret = cam_bist_mclk_cc_sun_fixup(pdev, regmap);
 	if (ret)
 		return ret;
 

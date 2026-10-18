@@ -250,10 +250,7 @@ bool hyp_trace_init_event_early(void)
 }
 
 static struct dentry *event_tracefs;
-// Event IDs should be positive integers, hence starting from 1 here.
-// NOTE: this introduces ID clash between hypervisor events and kernel events.
-// For now this doesn't seem to cause problems, but we should fix it...
-static unsigned int last_event_id = 1;
+static unsigned int last_event_id;
 
 struct hyp_event_table {
 	struct hyp_event	*start;
@@ -269,35 +266,29 @@ static struct hyp_event_mod_tables {
 
 struct hyp_event *hyp_trace_find_event(int id)
 {
-	struct hyp_event *event;
-	struct hyp_event_table *table;
-	int i, j;
+	struct hyp_event *event = __hyp_events_start + id;
 
-	for (event = __hyp_events_start; event < __hyp_events_end; event++) {
-		if (event->id == id)
-			return event;
-		if (event->id > id)
-			return NULL;
-	}
+	if ((unsigned long)event >= (unsigned long)__hyp_events_end) {
+		struct hyp_event_table *table;
 
-	event = NULL;
-	rcu_read_lock();
-	table = rcu_dereference(mod_event_tables.tables);
-	for (i = 0; i < mod_event_tables.nr_tables; i++, table++) {
-		event = table->start;
-		for (j = 0; j < table->nr_events; j++, event++) {
-			if (event->id == id)
-				goto end;
-			if (event->id > id) {
-				event = NULL;
-				goto end;
-			}
-		}
 		event = NULL;
-	}
+		id -= nr_events(__hyp_events_start, __hyp_events_end);
 
-end:
-	rcu_read_unlock();
+		rcu_read_lock();
+		table = rcu_dereference(mod_event_tables.tables);
+
+		for (int i = 0; i < mod_event_tables.nr_tables; i++) {
+			if (table->nr_events <= id) {
+				id -= table->nr_events;
+				table++;
+				continue;
+			}
+
+			event = table->start + id;
+			break;
+		}
+		rcu_read_unlock();
+	}
 
 	return event;
 }

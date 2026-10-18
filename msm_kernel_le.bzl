@@ -1,12 +1,3 @@
-load(
-    "//build:msm_kernel_extensions.bzl",
-    "define_extras",
-    "get_build_config_fragments",
-    "get_dtb_list",
-    "get_dtbo_list",
-    "get_dtstree",
-    "get_vendor_ramdisk_binaries",
-)
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 load("//build/kernel/kleaf:constants.bzl", "aarch64_outs")
 load(
@@ -16,16 +7,23 @@ load(
     "kernel_compile_commands",
     "kernel_images",
     "kernel_modules_install",
-    "kernel_uapi_headers_cc_library",
     "merged_kernel_uapi_headers",
 )
-load(":allyes_images.bzl", "gen_allyes_files")
-load(":image_opts.bzl", "boot_image_opts")
-load(":modules.bzl", "get_gki_modules_list", "get_kunit_modules_list")
-load(":msm_abl.bzl", "define_abl_dist")
+load(
+    "//build:msm_kernel_extensions.bzl",
+    "define_extras",
+    "get_build_config_fragments",
+    "get_dtb_list",
+    "get_dtbo_list",
+    "get_dtstree",
+    "get_vendor_ramdisk_binaries",
+)
 load(":msm_common.bzl", "define_top_level_config", "gen_config_without_source_lines", "get_out_dir")
 load(":msm_dtc.bzl", "define_dtc_dist")
+load(":msm_abl.bzl", "define_abl_dist")
+load(":image_opts.bzl", "boot_image_opts")
 load(":target_variants.bzl", "le_variants")
+load(":allyes_images.bzl", "gen_allyes_files")
 
 def _define_build_config(
         msm_target,
@@ -42,8 +40,7 @@ def _define_build_config(
       msm_target: name of target platform (e.g. "kalama")
       variant: variant of kernel to build (e.g. "gki")
     """
-    earlycon_param = "={}".format(boot_image_opts.earlycon_addr) if boot_image_opts.earlycon_addr != None else ""
-    earlycon_param = "earlycon" + earlycon_param
+
     gen_config_command = """
       cat << 'EOF' > "$@"
 KERNEL_DIR="msm-kernel"
@@ -62,7 +59,7 @@ BUILD_INITRAMFS=1
 [ -z "$${DT_OVERLAY_SUPPORT}" ] && DT_OVERLAY_SUPPORT=1
 
 if [ "$${KERNEL_CMDLINE_CONSOLE_AUTO}" != "0" ]; then
-        KERNEL_VENDOR_CMDLINE+=' console=ttyMSM0,115200n8 %s qcom_geni_serial.con_enabled=1 '
+        KERNEL_VENDOR_CMDLINE+=' console=ttyMSM0,115200n8 earlycon=qcom_geni,0x00a9C000 qcom_geni_serial.con_enabled=1 '
 fi
 EOF
     """ % (
@@ -72,7 +69,6 @@ EOF
         boot_image_opts.boot_image_header_version,
         boot_image_opts.base_address,
         boot_image_opts.page_size,
-        earlycon_param,
     )
 
     # Generate the build config
@@ -133,19 +129,6 @@ def _define_kernel_build(
     out_list.remove("Image.lz4")
     out_list.remove("Image.gz")
 
-    out_list.extend([
-        "scripts/sign-file",
-        "certs/signing_key.x509",
-    ])
-
-    if target.split("_")[0] in ["sun-le", "kera-le"]:
-        out_list += ["utsrelease.h"]
-        in_tree_module_list = in_tree_module_list + get_gki_modules_list("arm64")
-        in_tree_module_list = in_tree_module_list + get_kunit_modules_list("arm64")
-
-    if target.split("_")[0] == "qcs610":
-        out_list += ["utsrelease.h"]
-
     kernel_build(
         name = target,
         module_outs = in_tree_module_list,
@@ -154,8 +137,6 @@ def _define_kernel_build(
         dtstree = dtstree,
         kmi_symbol_list = None,
         additional_kmi_symbol_lists = None,
-        module_signing_key = ":signing_key",
-        system_trusted_key = ":verity_cert.pem",
         visibility = ["//visibility:public"],
     )
 
@@ -194,9 +175,6 @@ def _define_kernel_dist(target, msm_target, variant):
         ":{}_images".format(target),
         ":{}_merged_kernel_uapi_headers".format(target),
         ":{}_build_config".format(target),
-        ":{}_headers".format(target),
-        ":signing_key",
-        ":verity_key",
     ]
 
     # For allyes target, keeping perf super image as common for both debug & perf variants.
@@ -221,21 +199,9 @@ def _define_kernel_dist(target, msm_target, variant):
             "**/Image": "755",
             "**/*.dtb*": "755",
             "**/LinuxLoader*": "755",
-            "**/sign-file": "755",
             "**/*": "644",
         },
         log = "info",
-    )
-
-def _define_uapi_library(target):
-    """Define a cc_library for userspace programs to use
-
-    Args:
-      target: kernel_build target name (e.g. "kalama_gki")
-    """
-    kernel_uapi_headers_cc_library(
-        name = "{}_uapi_header_library".format(target),
-        kernel_build = ":{}".format(target),
     )
 
 def define_msm_le(
@@ -299,8 +265,6 @@ def define_msm_le(
         vendor_ramdisk_binaries = vendor_ramdisk_binaries,
         boot_image_outs = ["boot.img"],
     )
-
-    _define_uapi_library(target)
 
     _define_kernel_dist(target, msm_target, variant)
 

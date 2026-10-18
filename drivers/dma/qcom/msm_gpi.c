@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/atomic.h>
@@ -516,39 +516,10 @@ static const struct reg_info gpi_debug_ch_cntxt[] = {
 
 static const struct reg_info gpi_debug_regs[] = {
 	{ "DEBUG_PC", GPI_DEBUG_PC_FOR_DEBUG },
-	{ "DEBUG_BUSY", GPI_DEBUG_BUSY_REG },
-	{ "SW_RF_0", GPI_DEBUG_SW_RF_n_READ(0) },
-	{ "SW_RF_1", GPI_DEBUG_SW_RF_n_READ(1) },
-	{ "SW_RF_2", GPI_DEBUG_SW_RF_n_READ(2) },
-	{ "SW_RF_3", GPI_DEBUG_SW_RF_n_READ(3) },
-	{ "SW_RF_4", GPI_DEBUG_SW_RF_n_READ(4) },
-	{ "SW_RF_5", GPI_DEBUG_SW_RF_n_READ(5) },
-	{ "SW_RF_6", GPI_DEBUG_SW_RF_n_READ(6) },
-	{ "SW_RF_7", GPI_DEBUG_SW_RF_n_READ(7) },
-	{ "SW_RF_8", GPI_DEBUG_SW_RF_n_READ(8) },
-	{ "SW_RF_9", GPI_DEBUG_SW_RF_n_READ(9) },
 	{ "SW_RF_10", GPI_DEBUG_SW_RF_n_READ(10) },
 	{ "SW_RF_11", GPI_DEBUG_SW_RF_n_READ(11) },
 	{ "SW_RF_12", GPI_DEBUG_SW_RF_n_READ(12) },
-	{ "SW_RF_13", GPI_DEBUG_SW_RF_n_READ(13) },
-	{ "SW_RF_14", GPI_DEBUG_SW_RF_n_READ(14) },
-	{ "SW_RF_15", GPI_DEBUG_SW_RF_n_READ(15) },
-	{ "SW_RF_16", GPI_DEBUG_SW_RF_n_READ(16) },
-	{ "SW_RF_17", GPI_DEBUG_SW_RF_n_READ(17) },
-	{ "SW_RF_18", GPI_DEBUG_SW_RF_n_READ(18) },
-	{ "SW_RF_19", GPI_DEBUG_SW_RF_n_READ(19) },
-	{ "SW_RF_20", GPI_DEBUG_SW_RF_n_READ(20) },
 	{ "SW_RF_21", GPI_DEBUG_SW_RF_n_READ(21) },
-	{ "SW_RF_22", GPI_DEBUG_SW_RF_n_READ(22) },
-	{ "SW_RF_23", GPI_DEBUG_SW_RF_n_READ(23) },
-	{ "SW_RF_24", GPI_DEBUG_SW_RF_n_READ(24) },
-	{ "SW_RF_25", GPI_DEBUG_SW_RF_n_READ(25) },
-	{ "SW_RF_26", GPI_DEBUG_SW_RF_n_READ(26) },
-	{ "SW_RF_27", GPI_DEBUG_SW_RF_n_READ(27) },
-	{ "SW_RF_28", GPI_DEBUG_SW_RF_n_READ(28) },
-	{ "SW_RF_29", GPI_DEBUG_SW_RF_n_READ(29) },
-	{ "SW_RF_30", GPI_DEBUG_SW_RF_n_READ(30) },
-	{ "SW_RF_31", GPI_DEBUG_SW_RF_n_READ(31) },
 	{ NULL },
 };
 
@@ -675,7 +646,6 @@ static void gpi_process_events(struct gpii *gpii);
 static int gpi_start_chan(struct gpii_chan *gpii_chan);
 static void gpi_free_chan_desc(struct gpii_chan *gpii_chan);
 static void gpi_noop_tre(struct gpii_chan *gpii_chan);
-static u32 gpi_read_ch_state(struct gpii_chan *gpii_chan);
 
 static inline struct gpii_chan *to_gpii_chan(struct dma_chan *dma_chan)
 {
@@ -828,14 +798,6 @@ static void gpi_dump_cntxt_regs(struct gpii *gpii)
 		GPII_ERR(gpii, GPI_DBG_COMMON, "GPI_GPII_%d_CH_%d_RE_FETCH_READ_PTRg_val:0x%x\n",
 			 gpii->gpii_id, chan, reg_val);
 	}
-
-	for (chan = 0; chan < MAX_CHANNELS_PER_GPII; chan++) {
-		offset = GPI_GPII_MAP_EE_n_CH_k_VP_TABLE(gpii->gpii_id,
-							 gpii->gpii_chan[chan].chid);
-		reg_val = readl_relaxed(gpii->regs + offset);
-		GPII_ERR(gpii, GPI_DBG_COMMON, "GPI_GPII_%d_CH_%d_VP_TABLE_val:0x%x\n",
-			 gpii->gpii_id, chan, reg_val);
-	}
 }
 
 static void gpi_dump_debug_reg(struct gpii *gpii)
@@ -862,12 +824,6 @@ static void gpi_dump_debug_reg(struct gpii *gpii)
 		{ "IEOB_IRQ_MSK", GPI_GPII_n_CNTXT_SRC_IEOB_IRQ_MSK_OFFS
 					(gpii->gpii_id) },
 		{ "GLOB_IRQ", GPI_GPII_n_CNTXT_GLOB_IRQ_STTS_OFFS
-					(gpii->gpii_id) },
-		{ "GLOB_IRQ_EN", GPI_GPII_n_CNTXT_GLOB_IRQ_EN_OFFS
-					(gpii->gpii_id) },
-		{ "GPII_IRQ_STTS", GPI_GPII_n_CNTXT_GPII_IRQ_STTS_OFFS
-					(gpii->gpii_id) },
-		{ "GPII_IRQ_EN", GPI_GPII_n_CNTXT_GPII_IRQ_EN_OFFS
 					(gpii->gpii_id) },
 		{ NULL },
 	};
@@ -1019,21 +975,6 @@ static void gpi_dump_debug_reg(struct gpii *gpii)
 
 	GPII_ERR(gpii, GPI_DBG_COMMON, "Global IRQ handling Exit\n");
 }
-
-/**
- * get_gpii_chan_req_tres() - Retrieve the TRE size (`req_tres`) for
- *                            the specified GPII channel from the DTSI
- * @chan: Base address of the DMA channel
- *
- * Return: The TRE size of the GPII channel.
- */
-u32 get_gpii_chan_req_tres(struct dma_chan *chan)
-{
-	struct gpii_chan *gpii_chan = to_gpii_chan(chan);
-
-	return gpii_chan->req_tres;
-}
-EXPORT_SYMBOL_GPL(get_gpii_chan_req_tres);
 
 void gpi_dump_for_geni(struct dma_chan *chan)
 {
@@ -1686,8 +1627,8 @@ static int gpi_send_cmd(struct gpii *gpii,
 			enum gpi_cmd gpi_cmd)
 {
 	u32 chid = MAX_CHANNELS_PER_GPII;
-	u32 cmd, state;
-	u32 irq_stat, offset, ch_irq;
+	u32 cmd;
+	u32 offset, irq_stat;
 	unsigned long timeout;
 	void __iomem *cmd_reg;
 
@@ -1715,26 +1656,10 @@ static int gpi_send_cmd(struct gpii *gpii,
 	if (!timeout) {
 		offset = GPI_GPII_n_CNTXT_TYPE_IRQ_OFFS(gpii->gpii_id);
 		irq_stat = gpi_read_reg(gpii, gpii->regs + offset);
-		state = gpi_read_ch_state(gpii_chan);
-		/* Fallback mechanism for verifying the state of the register */
-		if (irq_stat & GPI_GPII_n_CNTXT_TYPE_IRQ_MSK_CH_CTRL) {
-			offset = GPI_GPII_n_CNTXT_SRC_GPII_CH_IRQ_OFFS(gpii->gpii_id);
-			ch_irq = gpi_read_reg(gpii, gpii->regs + offset);
-			if (cmd != state) {
-				GPII_ERR(gpii, chid,
-					 "cmd: %s completion timeout ch_state=0x%x and irq_status=0x%x\n",
-					  TO_GPI_CMD_STR(gpi_cmd), state, irq_stat);
-				return -EIO;
-			}
-			/* Clear the channel interrupt status by writing the interrupt value */
-			offset = GPI_GPII_n_CNTXT_SRC_CH_IRQ_CLR_OFFS(gpii->gpii_id);
-			gpi_write_reg(gpii, gpii->regs + offset, (u32)ch_irq);
-		} else {
-			GPII_ERR(gpii, chid,
-				 "cmd: %s completion timeout ch_state=0x%x and irq_status=0x%x\n",
-				 TO_GPI_CMD_STR(gpi_cmd), state, irq_stat);
-			return -EIO;
-		}
+		GPII_ERR(gpii, chid,
+			 "cmd: %s completion timeout irq_status=0x%x\n",
+		TO_GPI_CMD_STR(gpi_cmd), irq_stat);
+		return -EIO;
 	}
 
 	/* confirm new ch state is correct , if the cmd is a state change cmd */
@@ -1931,10 +1856,10 @@ static void gpi_generate_cb_event(struct gpii_chan *gpii_chan,
 	struct gpii *gpii = gpii_chan->gpii;
 	struct gpi_client_info *client_info = &gpii_chan->client_info;
 	struct msm_gpi_cb msm_gpi_cb = {0};
-	u32 ch_state = gpi_read_ch_state(gpii_chan);
 
-	GPII_ERR(gpii, gpii_chan->chid, "notifying event:%s with status:%llu ch_state:%s\n",
-		 TO_GPI_CB_EVENT_STR(event), status, TO_GPI_CH_STATE_STR(ch_state));
+	GPII_ERR(gpii, gpii_chan->chid,
+		 "notifying event:%s with status:%llu\n",
+		 TO_GPI_CB_EVENT_STR(event), status);
 
 	msm_gpi_cb.cb_event = event;
 	msm_gpi_cb.status = status;
@@ -3562,7 +3487,7 @@ struct dma_async_tx_descriptor *gpi_prep_slave_sg(struct dma_chan *chan,
 {
 	struct gpii_chan *gpii_chan = to_gpii_chan(chan);
 	struct gpii *gpii = gpii_chan->gpii;
-	u32 nr, ch_state;
+	u32 nr;
 	u32 nr_req = 0;
 	int i, j;
 	struct scatterlist *sg;
@@ -3580,14 +3505,6 @@ struct dma_async_tx_descriptor *gpi_prep_slave_sg(struct dma_chan *chan,
 			 "invalid dma direction: %d\n", direction);
 		return NULL;
 	}
-
-	ch_state = gpi_read_ch_state(gpii_chan);
-	GPII_VERB(gpii, gpii_chan->chid, "enter_c wp:0x%0llx rp:0x%0llx state:%s\n",
-		  to_physical(ch_ring, ch_ring->wp), to_physical(ch_ring, ch_ring->rp),
-		  TO_GPI_CH_STATE_STR(ch_state));
-
-	if (ch_state == CH_STATE_ERROR)
-		gpi_dump_debug_reg(gpii);
 
 	/* calculate # of elements required & available */
 	nr = gpi_ring_num_elements_avail(ch_ring);
@@ -3615,12 +3532,6 @@ struct dma_async_tx_descriptor *gpi_prep_slave_sg(struct dma_chan *chan,
 	/* copy each tre into transfer ring */
 	for_each_sg(sgl, sg, sg_len, i) {
 		tre = sg_virt(sg);
-
-		if (!tre) {
-			kfree(gpi_desc);
-			GPII_ERR(gpii, gpii_chan->chid, "TRE address is null\n");
-			return NULL;
-		}
 
 		if (sg_len == 1) {
 			tre_type =
@@ -3810,7 +3721,7 @@ static int gpi_config(struct dma_chan *chan,
 	return ret;
 
 error_start_chan:
-	for (i = i - 1; i >= 0; i--) {
+	for (i = i - 1; i >= 0; i++) {
 		gpi_send_cmd(gpii, gpii_chan, GPI_CH_CMD_STOP);
 		gpi_send_cmd(gpii, gpii_chan, GPI_CH_CMD_RESET);
 	}

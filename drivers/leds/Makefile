@@ -16,7 +16,6 @@ obj-$(CONFIG_LEDS_APU)			+= leds-apu.o
 obj-$(CONFIG_LEDS_ARIEL)		+= leds-ariel.o
 obj-$(CONFIG_LEDS_AW200XX)		+= leds-aw200xx.o
 obj-$(CONFIG_LEDS_AW2013)		+= leds-aw2013.o
-obj-$(CONFIG_LEDS_AW2016)		+= leds-aw2016.o
 obj-$(CONFIG_LEDS_BCM6328)		+= leds-bcm6328.o
 obj-$(CONFIG_LEDS_BCM6358)		+= leds-bcm6358.o
 obj-$(CONFIG_LEDS_BD2606MVV)		+= leds-bd2606mvv.o
@@ -117,8 +116,3 @@ obj-y					+= blink/
 
 # Simple LED drivers
 obj-y					+= simple/
-
-# aw21012 led
-obj-$(CONFIG_LEDS_AW210XX) += aw210xx/
-# fan
-obj-$(CONFIG_OPLUS_FAN) += fan/

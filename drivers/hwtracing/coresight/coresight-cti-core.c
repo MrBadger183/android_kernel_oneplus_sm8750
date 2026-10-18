@@ -1057,11 +1057,6 @@ static int cti_probe(struct amba_device *adev, const struct amba_id *id)
 		return -ENOMEM;
 
 	drvdata->atclk = devm_clk_get_optional_enabled(dev, "atclk"); /* optional */
-	if (IS_ERR(drvdata->atclk)) {
-		ret = PTR_ERR(drvdata->atclk);
-		dev_err(dev, "enable/get atclk fail, ret = %d\n", ret);
-		return ret == -ETIMEDOUT ? -EPROBE_DEFER : ret;
-	}
 
 	if (!drvdata->atclk && of_property_read_bool(dev->of_node, "qcom,atclk-dependence")) {
 		dev_err(dev, "atclk is NULL\n");

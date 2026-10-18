@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "qcom-bwmon: " fmt
@@ -92,7 +92,7 @@ static ssize_t show_##name(struct kobject *kobj,			\
 	struct hwmon_node *node = to_hwmon_node(kobj);			\
 	unsigned int i, cnt = 0;					\
 									\
-	for (i = 0; i < n && (i == 0 || node->name[i]); i++)		\
+	for (i = 0; i < n && node->name[i]; i++)			\
 		cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "%u ",	\
 							node->name[i]);	\
 	cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "\n");		\
@@ -283,33 +283,27 @@ static ssize_t store_max_low_power_cluster_freqs(struct kobject *kobj,
 			size_t count)
 {
 	struct hwmon_node *node = to_hwmon_node(kobj);
-	int ret = 0, numvals = 0, numcpus;
+	int ret, numvals;
 	unsigned int i = 0, val;
 	char **strlist;
 
 	strlist = argv_split(GFP_KERNEL, buf, &numvals);
 	if (!strlist)
 		return -ENOMEM;
-	numcpus = cpumask_weight(&node->hw->low_power_cluster_cpus);
-	if (numvals > numcpus) {
+	if (numvals != cpumask_weight(&node->hw->low_power_cluster_cpus)) {
 		dev_err(node->hw->dev, "invalid num of low power cpufreqs\n");
 		ret = -EINVAL;
 		goto out;
 	}
 	node->low_power_io_percent_enabled = true;
-	for (i = 0; i < numcpus; i++) {
-		if (i < numvals)
-			ret = kstrtouint(strlist[i], 10, &val);
-		else
-			val = 0;
+	for (i = 0; i < numvals; i++) {
+		ret = kstrtouint(strlist[i], 10, &val);
 		if (ret < 0)
 			goto out;
 		node->max_low_power_cluster_freqs[i] = val;
 		/* if any value is 0, disable the feature */
 		if (!val) {
 			node->low_power_io_percent_enabled = false;
-			for (i = 0; i < numcpus; i++)
-				node->max_low_power_cluster_freqs[i] = 0;
 			break;
 		}
 	}
@@ -1836,7 +1830,6 @@ void __stop_bw_hwmon(struct bw_hwmon *hw, enum mon_reg_type type)
 
 	bwmon_monitor_stop(hw);
 	mon_irq_disable(m, type);
-	synchronize_irq(m->irq);
 	free_irq(m->irq, m);
 	mon_disable(m, type);
 	mon_clear(m, true, type);

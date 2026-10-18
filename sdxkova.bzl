@@ -18,7 +18,6 @@ def define_sdxkova():
             defconfig = "build.config.msm.sdxkova",
             in_tree_module_list = mod_list,
             boot_image_opts = boot_image_opts(
-                earlycon_addr = "qcom_geni,0x00984000",
                 boot_image_header_version = 2,
                 base_address = 0x80000000,
                 page_size = 4096,

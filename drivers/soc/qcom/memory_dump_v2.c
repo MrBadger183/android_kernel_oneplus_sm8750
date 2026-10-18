@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2017, 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -110,8 +110,6 @@ struct msm_memory_dump {
 
 struct memdump_info {
 	struct device		*dev;
-	struct list_head	link;
-	struct mutex		mutex;
 	const struct device_node	*dev_node;
 	phys_addr_t		base;
 	void			*vbase;
@@ -127,8 +125,6 @@ struct memdump_info {
 #define PERCORE_REG_INITIALIZED BIT(0)
 #define SPRS_INITIALIZED BIT(1)
 
-static LIST_HEAD(dynamic_dump_list);
-DEFINE_MUTEX(dump_mutex);
 static struct msm_memory_dump memdump;
 
 /**
@@ -1130,30 +1126,47 @@ static size_t mem_dump_calc_dump_total_size(const struct device_node *node)
 }
 
 static int mem_dump_alloc(struct platform_device *pdev, struct device_node *node,
-			  phys_addr_t phys_addr, void *dump_vaddr)
+		struct reserved_mem *rmem, size_t *rmem_offset)
 {
+	size_t total_size;
+	int ret;
+	phys_addr_t phys_addr;
+	void *dump_vaddr;
 	struct memdump_info *dump_info;
 
 	dump_info = devm_kzalloc(&pdev->dev, sizeof(*dump_info), GFP_KERNEL);
 	if (!dump_info)
 		return  -ENOMEM;
 
+	total_size = ret = 0;
+	/* For dump table registration with IMEM */
+
+	total_size += mem_dump_calc_dump_total_size(node);
+	total_size = ALIGN(total_size, SZ_4K);
+
+	phys_addr = rmem->base + *rmem_offset;
+	dump_vaddr = memremap(phys_addr, total_size, MEMREMAP_WB);
+	if (!dump_vaddr)
+		return -ENOMEM;
+
+	memset(dump_vaddr, 0x0, total_size);
+
 	dump_info->vbase = dump_vaddr;
 	dump_info->base = phys_addr;
 	dump_info->dev_node = node;
 	dump_info->dev = &pdev->dev;
 	mem_dump_parse_register_entry(dump_info);
+	*rmem_offset = *rmem_offset + total_size;
 
-	return 0;
+	return ret;
 }
 
-static void mem_dump_free_rmem(phys_addr_t base, uint32_t size)
+static void dynamic_mem_dump_free_rmem(phys_addr_t base, uint32_t size)
 {
 	u64 tmp;
 
 	for (tmp = base; tmp < base + size; tmp += PAGE_SIZE)
 		free_reserved_page(phys_to_page(tmp));
-	pr_info("free unused reserved memory: %uK\n", size/1024);
 
 }
 
@@ -1161,17 +1174,12 @@ static void mem_dump_free_rmem(phys_addr_t base, uint32_t size)
 
 static int dynamic_mem_dump_disable(struct memdump_info *dump_info)
 {
-	mutex_lock(&dump_info->mutex);
-	if (dump_info->enable || !dump_info->active) {
-		mutex_unlock(&dump_info->mutex);
+	if (!dump_info->active)
 		return 0;
-	}
 
-	mem_dump_free_rmem(dump_info->base, dump_info->size);
+	dynamic_mem_dump_free_rmem(dump_info->base, dump_info->size);
 
 	dump_info->active = false;
-	dump_info->enable = false;
-	mutex_unlock(&dump_info->mutex);
 
 	return 0;
 }
@@ -1179,198 +1187,68 @@ static int dynamic_mem_dump_disable(struct memdump_info *dump_info)
 static int dynamic_mem_dump_enable(struct memdump_info *dump_info)
 {
 	void *vbase;
-	int ret = 0;
 
-	mutex_lock(&dump_info->mutex);
-	if (!dump_info->active) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!dump_info->active)
+		return -ENOMEM;
 
 	if (dump_info->enable)
-		goto out;
+		return 0;
 
 	vbase = memremap(dump_info->base, dump_info->size, MEMREMAP_WB);
-	if (!vbase) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!vbase)
+		return -ENOMEM;
 
 	memset(vbase, 0x0, dump_info->size);
 	dump_info->vbase = vbase;
 
 	mem_dump_parse_register_entry(dump_info);
 	dump_info->enable = true;
-
-out:
-	mutex_unlock(&dump_info->mutex);
-	return ret;
+	return 0;
 }
 
-static ssize_t disable_show(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf)
+static ssize_t enable_read(struct file *filp, char __user *userbuf, size_t count, loff_t *ppos)
 {
-	struct memdump_info *dump_info, *tmp;
-	char local_buf[64];
-	int len = 0, count = 0;
-	const char *dump_name;
+	struct memdump_info *dump_info = filp->private_data;
+	char *buf;
 
-	buf[0] = '\0';
-	len = scnprintf(local_buf, 64, "disabled dump entries:\n");
-	strlcat(buf, local_buf, PAGE_SIZE);
-	count += len;
-	list_for_each_entry_safe(dump_info, tmp, &dynamic_dump_list, link) {
-		if (dump_info->active)
-			continue;
-		dump_name = dump_info->dev_node->name;
-		len = scnprintf(local_buf, 64, "%s\n", dump_name);
-		if ((count + len) > PAGE_SIZE) {
-			dev_err(dev, "Couldn't show complete entries\n");
-			break;
-		}
-		strlcat(buf, local_buf, PAGE_SIZE);
-		count += len;
-	}
-	return count;
+	if (dump_info->enable)
+		buf = "1\n";
+	else
+		buf = "0\n";
+
+	return simple_read_from_buffer(userbuf, count, ppos, buf, strlen(buf) + 1);
 }
 
-static ssize_t disable_store(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf,
-				size_t size)
+static ssize_t enable_write(struct file *filp, const char __user *user_buf, size_t count,
+		loff_t *ppos)
 {
-	struct memdump_info *dump_info, *tmp;
-	char str[32] = "";
-	const char *dump_name;
-	bool found = false;
-	int ret;
+	int ret, val;
+	struct memdump_info *dump_info = filp->private_data;
 
-	if (strlen(buf) >= 32)
+	ret = kstrtouint_from_user(user_buf, count, 0, &val);
+
+	if (ret < 0)
+		return ret;
+
+	if (val != 1 && val != 0)
 		return -EINVAL;
-	if (sscanf(buf, "%s", str) != 1)
-		return -EINVAL;
 
+	if (val == 1)
+		ret = dynamic_mem_dump_enable(dump_info);
+	else
+		ret = dynamic_mem_dump_disable(dump_info);
 
-	list_for_each_entry_safe(dump_info, tmp, &dynamic_dump_list, link) {
-		dump_name = dump_info->dev_node->name;
-		if (!strcmp(str, dump_name)) {
-			found = true;
-			ret = dynamic_mem_dump_disable(dump_info);
-			break;
-		}
-	}
-
-	if (!found) {
-		dev_err(dev, "invalid input\n");
-		return -EINVAL;
-	}
-
-	return ret ? ret : size;
-}
-static DEVICE_ATTR_RW(disable);
-
-static ssize_t enable_show(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf)
-{
-	struct memdump_info *dump_info, *tmp;
-	char local_buf[64];
-	int len = 0, count = 0;
-	const char *dump_name;
-
-	buf[0] = '\0';
-	len = scnprintf(local_buf, 64, "enabled dump entries:\n");
-	strlcat(buf, local_buf, PAGE_SIZE);
-	count += len;
-
-	list_for_each_entry_safe(dump_info, tmp, &dynamic_dump_list, link) {
-		if (!dump_info->enable)
-			continue;
-		dump_name = dump_info->dev_node->name;
-		len = scnprintf(local_buf, 64, "%s\n", dump_name);
-		if ((count + len) > PAGE_SIZE) {
-			dev_err(dev, "Couldn't show complete entries\n");
-			break;
-		}
-		strlcat(buf, local_buf, PAGE_SIZE);
-		count += len;
-	}
+	if (ret)
+		return ret;
 
 	return count;
 }
 
-static ssize_t enable_store(struct device *dev,
-			    struct device_attribute *attr,
-			    const char *buf,
-			    size_t size)
-{
-	struct memdump_info *dump_info, *tmp;
-	char str[32] = "";
-	const char *dump_name;
-	bool found = false;
-	int ret;
-
-	if (strlen(buf) >= 32)
-		return -EINVAL;
-	if (sscanf(buf, "%s", str) != 1)
-		return -EINVAL;
-
-	list_for_each_entry_safe(dump_info, tmp, &dynamic_dump_list, link) {
-		dump_name = dump_info->dev_node->name;
-		if (!strcmp(str, dump_name)) {
-			found = true;
-			ret = dynamic_mem_dump_enable(dump_info);
-			break;
-		}
-	}
-
-	if (!found) {
-		dev_err(dev, "invalid input\n");
-		return -EINVAL;
-	}
-
-	return ret ? ret : size;
-}
-static DEVICE_ATTR_RW(enable);
-
-static ssize_t available_dynamic_dumps_show(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf)
-{
-	struct memdump_info *dump_info, *tmp;
-	char local_buf[32];
-	int len = 0, count = 0;
-	const char *dump_name;
-
-	buf[0] = '\0';
-	len = scnprintf(local_buf, 64, "all available dump entries:\n");
-	strlcat(buf, local_buf, PAGE_SIZE);
-	count += len;
-	list_for_each_entry_safe(dump_info, tmp, &dynamic_dump_list, link) {
-		dump_name = dump_info->dev_node->name;
-		len = scnprintf(local_buf, 64, "%s\n", dump_name);
-		if ((count + len) > PAGE_SIZE) {
-			dev_err(dev, "Couldn't show complete entries\n");
-			break;
-		}
-		strlcat(buf, local_buf, PAGE_SIZE);
-		count += len;
-	}
-	return count;
-}
-static DEVICE_ATTR_RO(available_dynamic_dumps);
-
-static struct attribute *dynamic_dump_attrs[] = {
-	&dev_attr_available_dynamic_dumps.attr,
-	&dev_attr_enable.attr,
-	&dev_attr_disable.attr,
-	NULL,
-};
-
-static struct attribute_group dynamic_dump_group = {
-	.attrs = dynamic_dump_attrs,
-	.name = "dynamic_mem_dump",
+static const struct file_operations enable_fops = {
+	.read = enable_read,
+	.write = enable_write,
+	.open = simple_open,
+	.llseek = generic_file_llseek,
 };
 
 static int dynamic_mem_dump_alloc(struct platform_device *pdev, struct device_node *node,
@@ -1378,13 +1256,12 @@ static int dynamic_mem_dump_alloc(struct platform_device *pdev, struct device_no
 {
 	struct device_node *child_node;
 	int ret = 0;
-	size_t total_size, used_size;
+	size_t total_size, used_size, free_size;
 	struct memdump_info *dump_info;
+	struct dentry *dump_dir, *dbg_dir;
 
-	ret = sysfs_create_group(&pdev->dev.kobj, &dynamic_dump_group);
-	if (ret)
-		return ret;
 
+	dbg_dir = debugfs_create_dir("dynamic_mem_dump", NULL);
 	used_size = *rmem_offset;
 
 	for_each_available_child_of_node(node, child_node) {
@@ -1401,15 +1278,19 @@ static int dynamic_mem_dump_alloc(struct platform_device *pdev, struct device_no
 		dump_info->base = rmem->base + used_size;
 		dump_info->size = total_size;
 		dump_info->active = true;
-		mutex_init(&dump_info->mutex);
 		used_size += total_size;
 		if (used_size > rmem->base + rmem->size) {
 			dev_err(&pdev->dev, "no memory\n");
 			return -ENOMEM;
 		}
-		list_add(&dump_info->link, &dynamic_dump_list);
+
+		dump_dir = debugfs_create_dir(child_node->name, dbg_dir);
+		debugfs_create_file("enable", 0600, dump_dir, dump_info, &enable_fops);
 	}
 
+	free_size = rmem->size - used_size;
+	if (free_size > 0)
+		dynamic_mem_dump_free_rmem(rmem->base + used_size, free_size);
 	*rmem_offset = used_size;
 
 	return ret;
@@ -1417,28 +1298,44 @@ static int dynamic_mem_dump_alloc(struct platform_device *pdev, struct device_no
 
 #else
 static int dynamic_mem_dump_alloc(struct platform_device *pdev, struct device_node *node,
-	struct reserved_mem *rmem, size_t *rmem_offset)
+			struct reserved_mem *rmem, size_t *rmem_offset)
 {
+	size_t free_size;
+
+	free_size = rmem->size - *rmem_offset;
+	if (free_size > 0)
+		dynamic_mem_dump_free_rmem(rmem->base + *rmem_offset, free_size);
+
+	dev_info(&pdev->dev, "free reserved memory for dynamic dump\n");
+
 	return 0;
 }
 #endif
 
-static int mem_dump_alloc_with_rmem(struct platform_device *pdev,
-				    struct device_node *rmem_node)
+static int mem_dump_probe(struct platform_device *pdev)
 {
 	int ret;
 	const struct device_node *node = pdev->dev.of_node;
+	struct device_node *rmem_node;
 	struct reserved_mem *rmem;
 	struct device_node *child_node;
-	size_t node_size;
 	uint32_t ns_vmids[] = {VMID_HLOS};
 	uint32_t ns_vm_perms[] = {PERM_READ | PERM_WRITE};
 	u64 shm_bridge_handle;
-	size_t free_size, used_size = 0;
-	void *memdump_vaddr, *dump_vaddr;
-	phys_addr_t phys_addr, dump_paddr;
+	size_t used_size = 0;
+	void *memdump_vaddr;
+	phys_addr_t phys_addr;
 	struct md_region md_entry;
 
+	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	if (ret < 0)
+		return ret;
+
+	rmem_node = of_parse_phandle(node, "memory-region", 0);
+	if (!rmem_node) {
+		dev_err(&pdev->dev, "no memory-region for dump\n");
+		return -EINVAL;
+	}
 	rmem = of_reserved_mem_lookup(rmem_node);
 	if (!rmem) {
 		dev_err(&pdev->dev, "reserved memory for dump fail\n");
@@ -1464,26 +1361,12 @@ static int mem_dump_alloc_with_rmem(struct platform_device *pdev,
 			ret = dynamic_mem_dump_alloc(pdev, child_node, rmem, &used_size);
 			if (ret)
 				dev_err(&pdev->dev, "dynamic dump alloc failed\n");
-		} else if (of_property_read_bool(child_node, "qcom,static-mem-dump")) {
-			node_size = mem_dump_calc_dump_total_size(child_node);
-			if (!node_size)
-				continue;
-			node_size = ALIGN(node_size, SZ_4K);
-			dump_paddr = rmem->base + used_size;
-			dump_vaddr = memremap(dump_paddr, node_size, MEMREMAP_WB);
-			if (!dump_vaddr)
-				return -ENOMEM;
-			memset(dump_vaddr, 0x0, node_size);
-			ret = mem_dump_alloc(pdev, child_node, dump_paddr, dump_vaddr);
+		} else {
+			ret = mem_dump_alloc(pdev, child_node, rmem, &used_size);
 			if (ret)
 				dev_err(&pdev->dev, "static dump alloc failed\n");
-			used_size += node_size;
 		}
 	}
-
-	free_size = rmem->size - used_size;
-	if (free_size > 0)
-		mem_dump_free_rmem(rmem->base + used_size, free_size);
 
 	ret = qtee_shmbridge_register(phys_addr, used_size, ns_vmids,
 			ns_vm_perms, 1, PERM_READ|PERM_WRITE, &shm_bridge_handle);
@@ -1507,112 +1390,6 @@ static int mem_dump_alloc_with_rmem(struct platform_device *pdev,
 	strscpy(md_entry.name, "MEMDUMP", sizeof(md_entry.name));
 	if (msm_minidump_add_region(&md_entry) < 0)
 		dev_err(&pdev->dev, "Mini dump entry failed name = %s\n", md_entry.name);
-
-	return ret;
-}
-
-static int mem_dump_alloc_with_cma(struct platform_device *pdev,
-				   struct device_node *rmem_node)
-{
-	struct device_node *node = pdev->dev.of_node;
-	struct device *dev = &pdev->dev;
-	struct md_region md_entry;
-	size_t total_size;
-	dma_addr_t dma_handle;
-	phys_addr_t phys_addr, mini_phys_addr;
-	struct sg_table mem_dump_sgt;
-	void *dump_vaddr, *mini_dump_vaddr;
-	uint32_t ns_vmids[] = {VMID_HLOS};
-	uint32_t ns_vm_perms[] = {PERM_READ | PERM_WRITE};
-	u64 shm_bridge_handle;
-	int ret;
-
-	ret = of_reserved_mem_device_init_by_idx(dev, dev->of_node, 0);
-	of_node_put(dev->of_node);
-	if (ret) {
-		dev_err(dev,
-			"Failed to initialize reserved mem, ret %d\n", ret);
-		return ret;
-	}
-
-	total_size = ret = 0;
-	total_size += mem_dump_calc_dump_total_size(node);
-	if (!total_size)
-		return -ENOMEM;
-	/* For dump table registration with IMEM */
-	total_size += sizeof(struct msm_dump_table) * 2;
-	total_size = ALIGN(total_size, SZ_4K);
-
-	dump_vaddr = dmam_alloc_coherent(&pdev->dev, total_size,
-						&dma_handle, GFP_KERNEL);
-	if (!dump_vaddr)
-		return -ENOMEM;
-
-	dma_get_sgtable(&pdev->dev, &mem_dump_sgt, dump_vaddr,
-						dma_handle, total_size);
-	phys_addr = page_to_phys(sg_page(mem_dump_sgt.sgl));
-	sg_free_table(&mem_dump_sgt);
-
-	memset(dump_vaddr, 0x0, total_size);
-	ret = qtee_shmbridge_register(phys_addr, total_size, ns_vmids,
-			ns_vm_perms, 1, PERM_READ|PERM_WRITE, &shm_bridge_handle);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to create shm bridge.ret=%d\n", ret);
-		return ret;
-	}
-
-	ret = init_memory_dump(dump_vaddr, phys_addr);
-	if (ret) {
-		dev_err(&pdev->dev, "Memory Dump table set up is failed\n");
-		qtee_shmbridge_deregister(shm_bridge_handle);
-		return ret;
-	}
-
-	ret = qcom_scm_assign_dump_table_region(1, phys_addr, total_size);
-	if (ret) {
-		ret = init_memdump_imem_area(total_size);
-		if (ret) {
-			qtee_shmbridge_deregister(shm_bridge_handle);
-			return ret;
-		}
-	}
-
-	mini_dump_vaddr = dump_vaddr;
-	mini_phys_addr = phys_addr;
-	dump_vaddr += (sizeof(struct msm_dump_table) * 2);
-	phys_addr += (sizeof(struct msm_dump_table) * 2);
-
-	mem_dump_alloc(pdev, node, phys_addr, dump_vaddr);
-
-	md_entry.phys_addr = mini_phys_addr;
-	md_entry.virt_addr = (u64)mini_dump_vaddr;
-	md_entry.size = total_size;
-	strscpy(md_entry.name, "MEMDUMP", sizeof(md_entry.name));
-	if (msm_minidump_add_region(&md_entry) < 0)
-		dev_err(&pdev->dev, "Mini dump entry failed name = %s\n", md_entry.name);
-
-	return ret;
-}
-
-static int mem_dump_probe(struct platform_device *pdev)
-{
-	int ret;
-	struct device_node *rmem_node;
-
-	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (ret < 0)
-		return ret;
-
-	rmem_node = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
-	if (!rmem_node) {
-		dev_err(&pdev->dev, "no memory-region for dump\n");
-		return -EINVAL;
-	}
-
-	if (of_property_read_bool(rmem_node, "reusable"))
-		ret = mem_dump_alloc_with_cma(pdev, rmem_node);
-	else
-		ret = mem_dump_alloc_with_rmem(pdev, rmem_node);
 
 	return ret;
 }

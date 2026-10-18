@@ -57,7 +57,6 @@
   bitmap_find_next_zero_area_off
   bitmap_free
   __bitmap_or
-  bitmap_parselist
   bitmap_print_to_pagebuf
   bitmap_release_region
   __bitmap_set
@@ -227,6 +226,7 @@
   cpu_irqtime
   cpu_latency_qos_add_request
   cpu_latency_qos_remove_request
+  cpu_latency_qos_request_active
   cpu_latency_qos_update_request
   cpumask_any_and_distribute
   cpu_number
@@ -1186,10 +1186,10 @@
   mmc_cqe_request_done
   mmc_execute_tuning
   mmc_hs200_tuning
-  mmc_issue_type
-  mmc_of_parse
   __mmc_poll_for_busy
   mmc_prepare_busy_cmd
+  mmc_issue_type
+  mmc_of_parse
   mmc_regulator_get_supply
   mmc_regulator_set_ocr
   mmc_regulator_set_vqmmc
@@ -1504,7 +1504,6 @@
   __pm_runtime_use_autosuspend
   __pm_stay_awake
   pm_stay_awake
-  pm_suspend_target_state
   pm_system_wakeup
   pm_wakeup_dev_event
   pm_wakeup_ws_event
@@ -1536,7 +1535,6 @@
   proc_set_user
   proto_register
   proto_unregister
-  __pskb_copy_fclone
   pskb_expand_head
   __pskb_pull_tail
   ___pskb_trim
@@ -1743,7 +1741,6 @@
   sched_feat_keys
   sched_feat_names
   sched_setattr
-  sched_set_fifo_low
   sched_set_normal
   sched_setscheduler
   sched_setscheduler_nocheck
@@ -1802,7 +1799,6 @@
   set_capacity_and_notify
   set_next_entity
   __SetPageMovable
-  set_page_private
   set_task_cpu
   sg_alloc_table
   sg_alloc_table_from_pages_segment
@@ -2057,6 +2053,7 @@
   __traceiter_android_rvh_dequeue_task
   __traceiter_android_rvh_do_sched_yield
   __traceiter_android_rvh_enqueue_task
+  __traceiter_android_rvh_entity_tick
   __traceiter_android_rvh_find_busiest_queue
   __traceiter_android_rvh_find_lowest_rq
   __traceiter_android_rvh_find_new_ilb
@@ -2140,8 +2137,6 @@
   __traceiter_android_vh_ufs_send_uic_command
   __traceiter_android_vh_ufs_update_sdev
   __traceiter_android_vh_update_topology_flags_workfn
-  __traceiter_android_vh_zs_shrinker_adjust
-  __traceiter_android_vh_zs_shrinker_bypass
   __traceiter_cpu_frequency_limits
   __traceiter_ipi_entry
   __traceiter_ipi_raise
@@ -2149,14 +2144,14 @@
   __traceiter_mmap_lock_acquire_returned
   __traceiter_mmap_lock_released
   __traceiter_mmap_lock_start_locking
-  __traceiter_rwmmio_post_read
-  __traceiter_rwmmio_post_write
-  __traceiter_rwmmio_read
-  __traceiter_rwmmio_write
   __traceiter_sched_overutilized_tp
   __traceiter_sched_switch
   __traceiter_sk_data_ready
   __traceiter_suspend_resume
+  __traceiter_android_rvh_enqueue_entity
+  __traceiter_android_rvh_dequeue_entity
+  __tracepoint_android_rvh_enqueue_entity
+  __tracepoint_android_rvh_dequeue_entity
   __tracepoint_android_rvh_account_irq
   __tracepoint_android_rvh_before_do_sched_yield
   __tracepoint_android_rvh_build_perf_domains
@@ -2169,6 +2164,7 @@
   __tracepoint_android_rvh_dequeue_task
   __tracepoint_android_rvh_do_sched_yield
   __tracepoint_android_rvh_enqueue_task
+  __tracepoint_android_rvh_entity_tick
   __tracepoint_android_rvh_find_busiest_queue
   __tracepoint_android_rvh_find_lowest_rq
   __tracepoint_android_rvh_find_new_ilb
@@ -2252,8 +2248,6 @@
   __tracepoint_android_vh_ufs_send_uic_command
   __tracepoint_android_vh_ufs_update_sdev
   __tracepoint_android_vh_update_topology_flags_workfn
-  __tracepoint_android_vh_zs_shrinker_adjust
-  __tracepoint_android_vh_zs_shrinker_bypass
   __tracepoint_cpu_frequency_limits
   __tracepoint_ipi_entry
   __tracepoint_ipi_raise
@@ -2264,10 +2258,6 @@
   tracepoint_probe_register
   tracepoint_probe_register_prio
   tracepoint_probe_unregister
-  __tracepoint_rwmmio_post_read
-  __tracepoint_rwmmio_post_write
-  __tracepoint_rwmmio_read
-  __tracepoint_rwmmio_write
   __tracepoint_sched_overutilized_tp
   __tracepoint_sched_switch
   __tracepoint_sk_data_ready
@@ -2402,7 +2392,6 @@
   usb_unregister_notify
   __usecs_to_jiffies
   usleep_range_state
-  utf8_data_table
   uuid_parse
   v4l2_compat_ioctl32
   v4l2_ctrl_find

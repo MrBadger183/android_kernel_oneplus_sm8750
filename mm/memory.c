@@ -79,6 +79,9 @@
 #include <linux/vmalloc.h>
 #include <linux/sched/sysctl.h>
 #include <linux/zswap.h>
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+#include <linux/susfs_def.h>
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 
 #include <trace/events/kmem.h>
 #include <trace/hooks/mm.h>
@@ -713,7 +716,6 @@ struct folio *vm_normal_folio_pmd(struct vm_area_struct *vma,
 		return page_folio(page);
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(vm_normal_folio_pmd);
 #endif
 
 static void restore_exclusive_pte(struct vm_area_struct *vma,
@@ -3963,7 +3965,7 @@ static struct folio *__alloc_swap_folio(struct vm_fault *vmf)
 	struct folio *folio;
 	swp_entry_t entry;
 
-	folio = vma_alloc_folio(GFP_HIGHUSER_MOVABLE|__GFP_CMA, 0, vma,
+	folio = vma_alloc_folio(GFP_HIGHUSER_MOVABLE, 0, vma,
 				vmf->address, false);
 	if (!folio)
 		return NULL;
@@ -6396,8 +6398,18 @@ int __access_remote_vm(struct mm_struct *mm, unsigned long addr, void *buf,
 		int bytes, offset;
 		void *maddr;
 		struct vm_area_struct *vma = NULL;
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+		struct page *page = NULL;
+
+		if (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))
+			break;
+		
+		page = get_user_page_vma_remote(mm, addr,
+							     gup_flags, &vma);
+#else
 		struct page *page = get_user_page_vma_remote(mm, addr,
 							     gup_flags, &vma);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 
 		if (IS_ERR_OR_NULL(page)) {
 			/* We might need to expand the stack to access it */

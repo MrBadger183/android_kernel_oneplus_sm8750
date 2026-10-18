@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/err.h>
@@ -111,15 +111,13 @@
 
 #define USB_PHY_FSEL_SEL		(0xb8)
 
-/* M31 PHY XCFGI interface registers & bit(s)*/
-#define USB_PHY_XCFGI_159_152		(0x1A8)
-#define USB_PHY_XCFGI_71_64		(0x17c)
+/* M31 PHY XCFGI interface registers */
 #define USB_PHY_XCFGI_39_32		(0x16c)
+#define USB_PHY_XCFGI_71_64		(0x17c)
 #define USB_PHY_XCFGI_31_24		(0x168)
 #define XCFG_U2_HSTX_SLEW		(0x7)
 #define USB_PHY_XCFGI_7_0		(0x15c)
 #define XCFG_U2_PLLLOCKTIME		(0x3)
-#define XCFG_SE0_TIMEOUT_EN		BIT(7)
 
 /* EUD CSR field */
 #define EUD_EN2				BIT(0)
@@ -149,17 +147,11 @@ struct eusb_phy_tbl {
 static const struct eusb_phy_tbl m31_eusb_phy_tbl[] = {
 	EUSB_PHY_INIT_CFG(USB_PHY_CFG0, BIT(1), 1),
 	EUSB_PHY_INIT_CFG(USB_PHY_UTMI_CTRL5, BIT(1), 1),
+	EUSB_PHY_INIT_CFG(USB_PHY_CFG1, BIT(0), 1),
 	EUSB_PHY_INIT_CFG(USB_PHY_FSEL_SEL, BIT(0), 1),
 };
 
 static const struct eusb_phy_tbl m31_eusb_phy_override_tbl[] = {
-	/*
-	 * Set XCFGI[159] to enable SE0 timeout mechanism in M31.
-	 * This enables a counter which will assume bus inactive if
-	 * SE0 is more then 2.5 us and reset the state machine to default
-	 * state.
-	 */
-	EUSB_PHY_INIT_CFG(USB_PHY_XCFGI_159_152, BIT(7), 1),
 	EUSB_PHY_INIT_CFG(USB_PHY_XCFGI_39_32, GENMASK(3, 2), 0),
 	EUSB_PHY_INIT_CFG(USB_PHY_XCFGI_71_64, GENMASK(3, 0), 7),
 	EUSB_PHY_INIT_CFG(USB_PHY_XCFGI_31_24, GENMASK(2, 0), 0),
@@ -218,6 +210,7 @@ struct m31_eusb2_phy {
 	bool			power_enabled;
 	bool			suspended;
 	bool			cable_connected;
+	bool			ref_clk_enable;
 
 	struct power_supply	*usb_psy;
 	unsigned int		vbus_draw;
@@ -261,11 +254,6 @@ static void msm_m31_eusb2_phy_clocks(struct m31_eusb2_phy *phy, bool on)
 
 		if (phy->ref_clk)
 			clk_prepare_enable(phy->ref_clk);
-	/* HPG section 5.1.2 PLL Control mentions stabilization time of
-	 * output clocks PLLCK120, PLLCK480, CLK48M while re-enabling them
-	 * to take  around 1.5 ms.
-	 */
-	usleep_range(1500, 2000);
 	} else {
 		if (phy->ref_clk)
 			clk_disable_unprepare(phy->ref_clk);
@@ -616,6 +604,16 @@ static int msm_m31_eusb2_phy_set_suspend(struct usb_phy *uphy, int suspend)
 		if (phy->cable_connected ||
 			(phy->phy.flags & PHY_HOST_MODE)) {
 			msm_m31_eusb2_phy_clocks(phy, false);
+			/*
+			 * Keep the ref_clk for PHY on to detect resume signalling in bus
+			 * suspend case. As this vote is suppressible, this will allow XO
+			 * shutdown.
+			 */
+			if (phy->ref_clk && !phy->ref_clk_enable) {
+				phy->ref_clk_enable = true;
+				clk_prepare_enable(phy->ref_clk);
+			}
+
 			goto suspend_exit;
 		}
 
@@ -629,6 +627,11 @@ static int msm_m31_eusb2_phy_set_suspend(struct usb_phy *uphy, int suspend)
 		/* With EUD spoof disconnect, keep clk and ldos on */
 		if (phy->phy.flags & EUD_SPOOF_DISCONNECT || is_eud_debug_mode_active(phy))
 			goto suspend_exit;
+
+		if (phy->ref_clk && phy->ref_clk_enable) {
+			clk_disable_unprepare(phy->ref_clk);
+			phy->ref_clk_enable = false;
+		}
 
 		msm_m31_eusb2_phy_clocks(phy, false);
 		msm_m31_eusb2_phy_power(phy, false);
@@ -694,9 +697,6 @@ static void msm_m31_eusb2_phy_vbus_draw_work(struct work_struct *w)
 static int msm_m31_eusb2_phy_set_power(struct usb_phy *uphy, unsigned int mA)
 {
 	struct m31_eusb2_phy *phy = container_of(uphy, struct m31_eusb2_phy, phy);
-
-	if (phy->cable_connected && (mA == 0))
-		return 0;
 
 	phy->vbus_draw = mA;
 	schedule_work(&phy->vbus_draw_work);
@@ -884,6 +884,10 @@ static int msm_m31_eusb2_phy_probe(struct platform_device *pdev)
 	phy->phy.type			= USB_PHY_TYPE_USB2;
 	phy->phy.label			= "M31 eUSB2";
 
+	ret = usb_add_phy_dev(&phy->phy);
+	if (ret)
+		goto err_ret;
+
 	INIT_WORK(&phy->vbus_draw_work, msm_m31_eusb2_phy_vbus_draw_work);
 	msm_m31_eusb2_phy_create_debugfs(phy);
 	/*
@@ -897,10 +901,8 @@ static int msm_m31_eusb2_phy_probe(struct platform_device *pdev)
 		msm_m31_eusb2_repeater_reset_and_init(phy);
 	}
 
-	/* Placed at the end to ensure the probe is complete */
-	ret = usb_add_phy_dev(&phy->phy);
-
 	dev_dbg(dev, "M31 Phy Probed");
+	return 0;
 
 err_ret:
 	return ret;

@@ -188,7 +188,6 @@ arch/arm64/include/asm/tlb.h
 arch/arm64/include/asm/tlbbatch.h
 arch/arm64/include/asm/tlbflush.h
 arch/arm64/include/asm/topology.h
-arch/arm64/include/asm/trans_pgd.h
 arch/arm64/include/asm/traps.h
 arch/arm64/include/asm/uaccess.h
 arch/arm64/include/asm/unistd.h
@@ -249,8 +248,6 @@ arch/arm64/kernel/entry-fpsimd.S
 arch/arm64/kernel/entry.S
 arch/arm64/kernel/fpsimd.c
 arch/arm64/kernel/head.S
-arch/arm64/kernel/hibernate-asm.S
-arch/arm64/kernel/hibernate.c
 arch/arm64/kernel/hw_breakpoint.c
 arch/arm64/kernel/hyp-stub.S
 arch/arm64/kernel/idle.c
@@ -477,8 +474,6 @@ arch/arm64/mm/pageattr.c
 arch/arm64/mm/pgd.c
 arch/arm64/mm/proc.S
 arch/arm64/mm/ptdump.c
-arch/arm64/mm/trans_pgd-asm.S
-arch/arm64/mm/trans_pgd.c
 arch/arm64/net/bpf_jit.h
 arch/arm64/net/bpf_jit_comp.c
 arch/arm64/tools/gen-hyprel.c
@@ -653,7 +648,6 @@ drivers/android/binder_alloc.h
 drivers/android/binder_internal.h
 drivers/android/binder_trace.h
 drivers/android/binderfs.c
-drivers/android/dbitmap.h
 drivers/android/debug_kinfo.c
 drivers/android/debug_kinfo.h
 drivers/android/vendor_hooks.c
@@ -1233,7 +1227,6 @@ drivers/mailbox/mailbox.h
 drivers/mailbox/sun6i-msgbox.c
 drivers/mailbox/tegra-hsp.c
 drivers/md/dm-audit.h
-drivers/md/dm-bow.c
 drivers/md/dm-bufio.c
 drivers/md/dm-builtin.c
 drivers/md/dm-core.h
@@ -1514,7 +1507,6 @@ drivers/of/address.c
 drivers/of/base.c
 drivers/of/cpu.c
 drivers/of/device.c
-drivers/of/empty_root.dts
 drivers/of/fdt.c
 drivers/of/fdt_address.c
 drivers/of/irq.c
@@ -1897,8 +1889,6 @@ drivers/usb/gadget/function/uvc_configfs.c
 drivers/usb/gadget/function/uvc_configfs.h
 drivers/usb/gadget/function/uvc_queue.c
 drivers/usb/gadget/function/uvc_queue.h
-drivers/usb/gadget/function/uvc_trace.c
-drivers/usb/gadget/function/uvc_trace.h
 drivers/usb/gadget/function/uvc_v4l2.c
 drivers/usb/gadget/function/uvc_v4l2.h
 drivers/usb/gadget/function/uvc_video.c
@@ -1924,7 +1914,6 @@ drivers/usb/host/ehci-timer.c
 drivers/usb/host/ehci.h
 drivers/usb/host/pci-quirks.c
 drivers/usb/host/pci-quirks.h
-drivers/usb/host/xhci-caps.h
 drivers/usb/host/xhci-dbg.c
 drivers/usb/host/xhci-dbgcap.h
 drivers/usb/host/xhci-debugfs.c
@@ -1938,7 +1927,6 @@ drivers/usb/host/xhci-pci.c
 drivers/usb/host/xhci-pci.h
 drivers/usb/host/xhci-plat.c
 drivers/usb/host/xhci-plat.h
-drivers/usb/host/xhci-port.h
 drivers/usb/host/xhci-ring.c
 drivers/usb/host/xhci-trace.c
 drivers/usb/host/xhci-trace.h
@@ -2048,8 +2036,6 @@ drivers/virtio/virtio_anchor.c
 drivers/virtio/virtio_balloon.c
 drivers/virtio/virtio_pci_common.c
 drivers/virtio/virtio_pci_common.h
-drivers/virtio/virtio_pci_legacy.c
-drivers/virtio/virtio_pci_legacy_dev.c
 drivers/virtio/virtio_pci_modern.c
 drivers/virtio/virtio_pci_modern_dev.c
 drivers/virtio/virtio_ring.c
@@ -2104,11 +2090,11 @@ fs/erofs/internal.h
 fs/erofs/namei.c
 fs/erofs/super.c
 fs/erofs/sysfs.c
+fs/erofs/zutil.c
 fs/erofs/xattr.c
 fs/erofs/xattr.h
 fs/erofs/zdata.c
 fs/erofs/zmap.c
-fs/erofs/zutil.c
 fs/eventfd.c
 fs/eventpoll.c
 fs/exec.c
@@ -2950,7 +2936,6 @@ include/linux/crc8.h
 include/linux/cred.h
 include/linux/crypto.h
 include/linux/ctype.h
-include/linux/damon.h
 include/linux/dax.h
 include/linux/dcache.h
 include/linux/dccp.h
@@ -3537,7 +3522,6 @@ include/linux/personality.h
 include/linux/pfn.h
 include/linux/pfn_t.h
 include/linux/pgsize_migration.h
-include/linux/pgsize_migration_inline.h
 include/linux/pgtable.h
 include/linux/pgtable_api.h
 include/linux/phonet.h
@@ -4028,7 +4012,6 @@ include/media/cec-pin.h
 include/media/cec.h
 include/media/frame_vector.h
 include/media/i2c/ir-kbd-i2c.h
-include/media/jpeg.h
 include/media/media-dev-allocator.h
 include/media/media-device.h
 include/media/media-devnode.h
@@ -4293,8 +4276,6 @@ include/net/tcx.h
 include/net/timewait_sock.h
 include/net/tipc.h
 include/net/tls.h
-include/net/tls_prot.h
-include/net/tls_toe.h
 include/net/transp_v6.h
 include/net/tso.h
 include/net/udp.h
@@ -4380,7 +4361,6 @@ include/trace/bpf_probe.h
 include/trace/define_trace.h
 include/trace/events/9p.h
 include/trace/events/alarmtimer.h
-include/trace/events/android_vendor_lmk.h
 include/trace/events/asoc.h
 include/trace/events/avc.h
 include/trace/events/block.h
@@ -4392,7 +4372,6 @@ include/trace/events/cma.h
 include/trace/events/compaction.h
 include/trace/events/cpuhp.h
 include/trace/events/csd.h
-include/trace/events/damon.h
 include/trace/events/devfreq.h
 include/trace/events/devlink.h
 include/trace/events/dma_fence.h
@@ -4409,7 +4388,6 @@ include/trace/events/gpio.h
 include/trace/events/gpu_mem.h
 include/trace/events/huge_memory.h
 include/trace/events/i2c.h
-include/trace/events/icmp.h
 include/trace/events/initcall.h
 include/trace/events/io_uring.h
 include/trace/events/iocost.h
@@ -4498,14 +4476,12 @@ include/trace/hooks/fault.h
 include/trace/hooks/fips140.h
 include/trace/hooks/fpsimd.h
 include/trace/hooks/fs.h
-include/trace/hooks/fsnotify.h
 include/trace/hooks/ftrace_dump.h
 include/trace/hooks/fuse.h
 include/trace/hooks/futex.h
 include/trace/hooks/gic.h
 include/trace/hooks/gic_v3.h
 include/trace/hooks/gzvm.h
-include/trace/hooks/huge_memory.h
 include/trace/hooks/hung_task.h
 include/trace/hooks/iommu.h
 include/trace/hooks/logbuf.h
@@ -4513,11 +4489,9 @@ include/trace/hooks/lz4_decompress.h
 include/trace/hooks/madvise.h
 include/trace/hooks/mm.h
 include/trace/hooks/mmc.h
-include/trace/hooks/module.h
 include/trace/hooks/mpam.h
 include/trace/hooks/net.h
-include/trace/hooks/ogki_honor.h
-include/trace/hooks/perf.h
+include/trace/hooks/pm_domain.h
 include/trace/hooks/power.h
 include/trace/hooks/preemptirq.h
 include/trace/hooks/printk.h
@@ -4533,7 +4507,6 @@ include/trace/hooks/selinux.h
 include/trace/hooks/signal.h
 include/trace/hooks/softlockup.h
 include/trace/hooks/suspend.h
-include/trace/hooks/swapfile.h
 include/trace/hooks/sys.h
 include/trace/hooks/syscall_check.h
 include/trace/hooks/sysrqcrash.h
@@ -4541,14 +4514,12 @@ include/trace/hooks/thermal.h
 include/trace/hooks/timer.h
 include/trace/hooks/topology.h
 include/trace/hooks/traps.h
-include/trace/hooks/typec.h
 include/trace/hooks/ufshcd.h
 include/trace/hooks/usb.h
 include/trace/hooks/user.h
 include/trace/hooks/vendor_hooks.h
 include/trace/hooks/vmscan.h
 include/trace/hooks/wqlockup.h
-include/trace/hooks/xhci.h
 include/trace/perf.h
 include/trace/stages/init.h
 include/trace/stages/stage1_struct_define.h
@@ -4649,7 +4620,6 @@ include/uapi/linux/ethtool.h
 include/uapi/linux/ethtool_netlink.h
 include/uapi/linux/eventfd.h
 include/uapi/linux/eventpoll.h
-include/uapi/linux/exfat.h
 include/uapi/linux/ext4.h
 include/uapi/linux/f2fs.h
 include/uapi/linux/fadvise.h
@@ -5326,16 +5296,12 @@ kernel/panic.c
 kernel/params.c
 kernel/pid.c
 kernel/power/energy_model.c
-kernel/power/hibernate.c
 kernel/power/main.c
 kernel/power/power.h
 kernel/power/poweroff.c
 kernel/power/process.c
 kernel/power/qos.c
-kernel/power/snapshot.c
 kernel/power/suspend.c
-kernel/power/swap.c
-kernel/power/user.c
 kernel/power/wakelock.c
 kernel/power/wakeup_reason.c
 kernel/printk/braille.h
@@ -5791,16 +5757,6 @@ mm/cma.c
 mm/cma.h
 mm/cma_debug.c
 mm/compaction.c
-mm/damon/core-test.h
-mm/damon/core.c
-mm/damon/ops-common.c
-mm/damon/ops-common.h
-mm/damon/sysfs-common.c
-mm/damon/sysfs-common.h
-mm/damon/sysfs-schemes.c
-mm/damon/sysfs.c
-mm/damon/vaddr-test.h
-mm/damon/vaddr.c
 mm/debug.c
 mm/dmapool.c
 mm/early_ioremap.c
@@ -5846,7 +5802,6 @@ mm/mmu_notifier.c
 mm/mmzone.c
 mm/mprotect.c
 mm/mremap.c
-mm/mseal.c
 mm/msync.c
 mm/oom_kill.c
 mm/page-writeback.c
@@ -6187,7 +6142,6 @@ net/ipv4/raw.c
 net/ipv4/route.c
 net/ipv4/sysctl_net_ipv4.c
 net/ipv4/tcp.c
-net/ipv4/tcp_bbr.c
 net/ipv4/tcp_bpf.c
 net/ipv4/tcp_cong.c
 net/ipv4/tcp_cubic.c
@@ -6468,7 +6422,6 @@ net/sched/sch_prio.c
 net/sched/sch_sfq.c
 net/sched/sch_tbf.c
 net/socket.c
-net/strparser/strparser.c
 net/sysctl_net.c
 net/tipc/addr.c
 net/tipc/addr.h
@@ -6514,15 +6467,10 @@ net/tipc/trace.c
 net/tipc/trace.h
 net/tipc/udp_media.c
 net/tipc/udp_media.h
-net/tls/tls.h
-net/tls/tls_main.c
-net/tls/tls_proc.c
-net/tls/tls_strp.c
-net/tls/tls_sw.c
-net/tls/trace.c
-net/tls/trace.h
 net/unix/af_unix.c
 net/unix/garbage.c
+net/unix/scm.c
+net/unix/scm.h
 net/unix/sysctl_net_unix.c
 net/unix/unix_bpf.c
 net/vmw_vsock/af_vsock.c

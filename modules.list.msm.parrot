@@ -18,7 +18,6 @@ qcom_wdt_core.ko
 qcom_cpucp.ko
 qcom_ipc_logging.ko
 qcom-pdc.ko
-qti_thermal_vendor_hooks.ko
 qcom_tsens.ko
 thermal_pause.ko
 cpu_hotplug.ko
@@ -69,7 +68,6 @@ nvmem_qcom-spmi-sdam.ko
 proxy-consumer.ko
 qcom-spmi-pmic.ko
 spmi-pmic-arb.ko
-qpnp-power-on.ko
 qcom-reboot-reason.ko
 qti-regmap-debugfs.ko
 regmap-spmi.ko
@@ -89,6 +87,3 @@ gunyah.ko
 mdt_loader.ko
 qcom-ipcc.ko
 nvmem_qfprom.ko
-cqhci-crypto-qti.ko
-dcc_v2.ko
-memory_dump_v2.ko

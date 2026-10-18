@@ -77,33 +77,26 @@ static DEFINE_PER_CPU(struct cpu_fbatches, cpu_fbatches) = {
 	.lock = INIT_LOCAL_LOCK(lock),
 };
 
-static void __page_cache_release(struct folio *folio, struct lruvec **lruvecp,
-		unsigned long *flagsp)
-{
-	if (folio_test_lru(folio)) {
-		folio_lruvec_relock_irqsave(folio, lruvecp, flagsp);
-		lruvec_del_folio(*lruvecp, folio);
-		__folio_clear_lru_flags(folio);
-	}
-}
-
 /*
  * This path almost never happens for VM activity - pages are normally freed
  * in batches.  But it gets used by networking - and for compound pages.
  */
-static void page_cache_release(struct folio *folio)
+static void __page_cache_release(struct folio *folio)
 {
-	struct lruvec *lruvec = NULL;
-	unsigned long flags;
+	if (folio_test_lru(folio)) {
+		struct lruvec *lruvec;
+		unsigned long flags;
 
-	__page_cache_release(folio, &lruvec, &flags);
-	if (lruvec)
+		lruvec = folio_lruvec_lock_irqsave(folio, &flags);
+		lruvec_del_folio(lruvec, folio);
+		__folio_clear_lru_flags(folio);
 		unlock_page_lruvec_irqrestore(lruvec, flags);
+	}
 }
 
 static void __folio_put_small(struct folio *folio)
 {
-	page_cache_release(folio);
+	__page_cache_release(folio);
 	mem_cgroup_uncharge(folio);
 	free_unref_page(&folio->page, 0);
 }
@@ -117,7 +110,7 @@ static void __folio_put_large(struct folio *folio)
 	 * be called for hugetlb (it has a separate hugetlb_cgroup.)
 	 */
 	if (!folio_test_hugetlb(folio))
-		page_cache_release(folio);
+		__page_cache_release(folio);
 	destroy_large_folio(folio);
 }
 
@@ -140,25 +133,22 @@ EXPORT_SYMBOL(__folio_put);
  */
 void put_pages_list(struct list_head *pages)
 {
-	struct folio_batch fbatch;
 	struct folio *folio, *next;
 
-	folio_batch_init(&fbatch);
 	list_for_each_entry_safe(folio, next, pages, lru) {
-		if (!folio_put_testzero(folio))
+		if (!folio_put_testzero(folio)) {
+			list_del(&folio->lru);
 			continue;
+		}
 		if (folio_test_large(folio)) {
+			list_del(&folio->lru);
 			__folio_put_large(folio);
 			continue;
 		}
 		/* LRU flag must be clear because it's passed using the lru */
-		if (folio_batch_add(&fbatch, folio) > 0)
-			continue;
-		free_unref_folios(&fbatch);
 	}
 
-	if (fbatch.nr)
-		free_unref_folios(&fbatch);
+	free_unref_page_list(pages);
 	INIT_LIST_HEAD(pages);
 }
 EXPORT_SYMBOL(put_pages_list);
@@ -218,7 +208,7 @@ static void folio_batch_move_lru(struct folio_batch *fbatch, move_fn_t move_fn)
 		if (move_fn != lru_add_fn && !folio_test_clear_lru(folio))
 			continue;
 
-		folio_lruvec_relock_irqsave(folio, &lruvec, &flags);
+		lruvec = folio_lruvec_relock_irqsave(folio, lruvec, &flags);
 		move_fn(lruvec, folio);
 
 		folio_set_lru(folio);
@@ -736,7 +726,6 @@ void folio_deactivate(struct folio *folio)
 		local_unlock(&cpu_fbatches.lock);
 	}
 }
-EXPORT_SYMBOL_GPL(folio_deactivate);
 
 /**
  * folio_mark_lazyfree - make an anon folio lazyfree
@@ -984,11 +973,12 @@ EXPORT_SYMBOL_GPL(lru_cache_disable);
  */
 void folios_put_refs(struct folio_batch *folios, unsigned int *refs)
 {
-	int i, j;
+	int i;
+	LIST_HEAD(pages_to_free);
 	struct lruvec *lruvec = NULL;
 	unsigned long flags = 0;
 
-	for (i = 0, j = 0; i < folios->nr; i++) {
+	for (i = 0; i < folios->nr; i++) {
 		struct folio *folio = folios->folios[i];
 		unsigned int nr_refs = refs ? refs[i] : 1;
 
@@ -1020,23 +1010,21 @@ void folios_put_refs(struct folio_batch *folios, unsigned int *refs)
 			continue;
 		}
 
-		folio_unqueue_deferred_split(folio);
-		__page_cache_release(folio, &lruvec, &flags);
+		if (folio_test_lru(folio)) {
+			lruvec = folio_lruvec_relock_irqsave(folio, lruvec,
+									&flags);
+			lruvec_del_folio(lruvec, folio);
+			__folio_clear_lru_flags(folio);
+		}
 
-		if (j != i)
-			folios->folios[j] = folio;
-		j++;
+		list_add(&folio->lru, &pages_to_free);
 	}
 	if (lruvec)
 		unlock_page_lruvec_irqrestore(lruvec, flags);
-	if (!j) {
-		folio_batch_reinit(folios);
-		return;
-	}
 
-	folios->nr = j;
-	mem_cgroup_uncharge_folios(folios);
-	free_unref_folios(folios);
+	mem_cgroup_uncharge_list(&pages_to_free);
+	free_unref_page_list(&pages_to_free);
+	folio_batch_reinit(folios);
 }
 EXPORT_SYMBOL(folios_put_refs);
 

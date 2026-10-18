@@ -184,15 +184,6 @@ DECLARE_RESTRICTED_HOOK(android_rvh_account_irq,
 	TP_PROTO(struct task_struct *curr, int cpu, s64 delta, bool start),
 	TP_ARGS(curr, cpu, delta, start), 1);
 
-DECLARE_RESTRICTED_HOOK(android_rvh_before_pick_task_fair,
-	TP_PROTO(struct rq *rq, struct task_struct **p, struct sched_entity **se,
-			struct task_struct *prev, struct rq_flags *rf),
-	TP_ARGS(rq, p, se, prev, rf), 1);
-
-DECLARE_RESTRICTED_HOOK(android_rvh_balance_fair,
-	TP_PROTO(struct rq *rq, struct task_struct *prev, struct rq_flags *rf),
-	TP_ARGS(rq, prev, rf), 1);
-
 struct sched_entity;
 DECLARE_RESTRICTED_HOOK(android_rvh_place_entity,
 	TP_PROTO(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial, u64 *vruntime),
@@ -471,6 +462,10 @@ DECLARE_RESTRICTED_HOOK(android_rvh_update_blocked_fair,
 	TP_PROTO(struct rq *rq),
 	TP_ARGS(rq), 1);
 
+DECLARE_RESTRICTED_HOOK(android_rvh_update_load_sum,
+	TP_PROTO(struct sched_avg *sa, u64 *delta, unsigned int *sched_pelt_lshift),
+	TP_ARGS(sa, delta, sched_pelt_lshift), 1);
+
 struct sched_attr;
 
 DECLARE_HOOK(android_vh_set_sugov_sched_attr,
@@ -493,6 +488,7 @@ DECLARE_HOOK(android_vh_prio_restore,
 	TP_PROTO(int saved_prio),
 	TP_ARGS(saved_prio));
 
+/* macro versions of hooks are no longer required */
 DECLARE_HOOK(android_vh_set_task_comm,
 	TP_PROTO(struct task_struct *p),
 	TP_ARGS(p));

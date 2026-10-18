@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -500,13 +500,6 @@ err:
 	return ret;
 }
 
-static void __exit tgu_remove(struct amba_device *adev)
-{
-	struct tgu_drvdata *drvdata = dev_get_drvdata(&adev->dev);
-
-	coresight_unregister(drvdata->csdev);
-}
-
 static struct amba_id tgu_ids[] = {
 	{
 		.id	=	0x0003b999,
@@ -524,10 +517,9 @@ static struct amba_driver tgu_driver = {
 	},
 	.probe		=	tgu_probe,
 	.id_table	=	tgu_ids,
-	.remove		=	tgu_remove,
 };
 
-module_amba_driver(tgu_driver);
+builtin_amba_driver(tgu_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("CoreSight TGU driver");

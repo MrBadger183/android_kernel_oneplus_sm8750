@@ -206,10 +206,8 @@ replay_again:
 	server = cifs_pick_channel(ses);
 
 	vars = kzalloc(sizeof(*vars), GFP_ATOMIC);
-	if (vars == NULL) {
-		rc = -ENOMEM;
-		goto out;
-	}
+	if (vars == NULL)
+		return -ENOMEM;
 	rqst = &vars->rqst[0];
 	rsp_iov = &vars->rsp_iov[0];
 
@@ -830,7 +828,6 @@ finished:
 	    smb2_should_replay(tcon, &retries, &cur_sleep))
 		goto replay_again;
 
-out:
 	if (cfile)
 		cifsFileInfo_put(cfile);
 

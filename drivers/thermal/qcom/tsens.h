@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __QCOM_TSENS_H__
@@ -20,7 +20,6 @@
 #define TIMEOUT_US		100
 #define THRESHOLD_MAX_ADC_CODE	0x3ff
 #define THRESHOLD_MIN_ADC_CODE	0x0
-#define COLD_SENSOR_HW_ID	128
 
 #define MAX_SENSORS 16
 
@@ -44,7 +43,6 @@ enum tsens_irq_type {
 	LOWER,
 	UPPER,
 	CRITICAL,
-	COLD,
 };
 
 /**
@@ -122,7 +120,6 @@ struct tsens_ops {
 	void (*disable)(struct tsens_priv *priv);
 	int (*suspend)(struct tsens_priv *priv);
 	int (*resume)(struct tsens_priv *priv);
-	int (*get_cold_status)(const struct tsens_sensor *s, bool *cold_status);
 };
 
 #define REG_FIELD_FOR_EACH_SENSOR11(_name, _offset, _startbit, _stopbit) \
@@ -248,6 +245,22 @@ enum regfield_ids {
 	LAST_TEMP_13,
 	LAST_TEMP_14,
 	LAST_TEMP_15,
+	VALID_0,		/* VALID reading or not */
+	VALID_1,
+	VALID_2,
+	VALID_3,
+	VALID_4,
+	VALID_5,
+	VALID_6,
+	VALID_7,
+	VALID_8,
+	VALID_9,
+	VALID_10,
+	VALID_11,
+	VALID_12,
+	VALID_13,
+	VALID_14,
+	VALID_15,
 	LOWER_STATUS_0,	/* LOWER threshold violated */
 	LOWER_STATUS_1,
 	LOWER_STATUS_2,
@@ -542,7 +555,6 @@ enum regfield_ids {
 	TEMP_PERSIST_MIN_SENSOR_ID,
 	TEMP_PERSIST_MIN_VALID,
 
-	COLD_STATUS,		/* COLD interrupt status */
 	/* Keep last */
 	MAX_REGFIELDS
 };
@@ -560,9 +572,6 @@ enum regfield_ids {
  * @persist_max_min: does this IP support persist max-min data?
  * @trip_min_temp: minimum trip temperature supported by this version of the IP
  * @trip_max_temp: maximum trip temperature supported by this version of the IP
- * @valid_bit: validate if read temperature is valid or not?
- * @last_temp_mask: mask register for last temperature
- * @last_temp_resolution: last temperarure sign bit resolution
  */
 struct tsens_features {
 	unsigned int ver_major;
@@ -571,14 +580,10 @@ struct tsens_features {
 	unsigned int adc:1;
 	unsigned int srot_split:1;
 	unsigned int has_watchdog:1;
-	unsigned int cold_int:1;
 	unsigned int max_sensors;
 	unsigned int persist_max_min:1;
 	int trip_min_temp;
 	int trip_max_temp;
-	int valid_bit;
-	int last_temp_mask;
-	u32 last_temp_resolution;
 };
 
 /**
@@ -628,7 +633,6 @@ struct tsens_context {
  * @ipc_log: pointer for first ipc log context id
  * @ipc_log1: pointer for second ipc log context id
  * @sensor: list of sensors attached to this device
- * @cold_sensor: pointer to cold sensor attached to this device
  */
 struct tsens_priv {
 	struct device			*dev;
@@ -652,7 +656,6 @@ struct tsens_priv {
 	void				*ipc_log;
 	void				*ipc_log1;
 
-	struct tsens_sensor		*cold_sensor;
 	struct tsens_sensor		sensor[];
 };
 
@@ -702,7 +705,6 @@ void compute_intercept_slope(struct tsens_priv *priv, u32 *pt1, u32 *pt2, u32 mo
 int init_common(struct tsens_priv *priv);
 int get_temp_tsens_valid(const struct tsens_sensor *s, int *temp);
 int get_temp_common(const struct tsens_sensor *s, int *temp);
-int get_cold_int_status(const struct tsens_sensor *s, bool *cold_status);
 
 /* TSENS target */
 extern struct tsens_plat_data data_8960;

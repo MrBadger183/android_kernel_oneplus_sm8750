@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __QCOM_LPM_H__
@@ -65,7 +65,6 @@ struct lpm_cpu {
 	uint32_t pred_type;
 	bool ipi_pending;
 	spinlock_t lock;
-	bool cpu_off_invoked;
 };
 
 struct cluster_history {
@@ -103,7 +102,6 @@ struct lpm_cluster {
 	bool initialized;
 	bool is_timer_expired;
 	bool is_timer_queued;
-	bool need_timer_requeue;
 	bool use_bias_timer;
 };
 
@@ -111,13 +109,14 @@ struct cluster_governor {
 	void (*select)(struct lpm_cpu *cpu_gov);
 	void (*enable)(void);
 	void (*disable)(void);
-	void (*reflect)(struct lpm_cpu *cpu_gov);
+	void (*reflect)(void);
 };
 
 DECLARE_PER_CPU(struct lpm_cpu, lpm_cpu_data);
 
 int qcom_cluster_lpm_governor_init(void);
 void qcom_cluster_lpm_governor_deinit(void);
+void update_cluster_select(struct lpm_cpu *cpu_gov);
 void clear_cpu_predict_history(void);
 int create_global_sysfs_nodes(void);
 int create_cluster_sysfs_nodes(struct lpm_cluster *cluster_gov);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2014-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/suspend.h>
@@ -73,7 +73,7 @@ static int smp2p_sleepstate_probe(struct platform_device *pdev)
 
 	notify_ws = wakeup_source_register(&pdev->dev, "smp2p-sleepstate");
 	if (!notify_ws) {
-		ret = -ENOMEM;
+		return -ENOMEM;
 		goto err_ws;
 	}
 
@@ -84,6 +84,7 @@ static int smp2p_sleepstate_probe(struct platform_device *pdev)
 		goto err;
 	}
 	dev_dbg(dev, "got smp2p-sleepstate-in irq %d\n", irq);
+	// CR#3918899
 	ret = devm_request_threaded_irq(dev, irq, NULL,
 					smp2p_sleepstate_handler,
 					IRQF_ONESHOT | IRQF_TRIGGER_RISING |
@@ -96,6 +97,7 @@ static int smp2p_sleepstate_probe(struct platform_device *pdev)
 	return 0;
 err:
 	wakeup_source_unregister(notify_ws);
+	__pm_relax(notify_ws);
 err_ws:
 	unregister_pm_notifier(&sleepstate_pm_nb);
 	return ret;

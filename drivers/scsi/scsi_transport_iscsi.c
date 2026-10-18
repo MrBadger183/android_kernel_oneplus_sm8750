@@ -2169,8 +2169,6 @@ static int iscsi_iter_destroy_conn_fn(struct device *dev, void *data)
 		return 0;
 
 	iscsi_remove_conn(iscsi_dev_to_conn(dev));
-	iscsi_put_conn(iscsi_dev_to_conn(dev));
-
 	return 0;
 }
 
@@ -3527,7 +3525,7 @@ static int iscsi_new_flashnode(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.new_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_new_fnode;
+		goto put_host;
 	}
 
 	index = transport->new_flashnode(shost, data, len);
@@ -3537,6 +3535,7 @@ static int iscsi_new_flashnode(struct iscsi_transport *transport,
 	else
 		err = -EIO;
 
+put_host:
 	scsi_host_put(shost);
 
 exit_new_fnode:
@@ -3561,7 +3560,7 @@ static int iscsi_del_flashnode(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.del_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_del_fnode;
+		goto put_host;
 	}
 
 	idx = ev->u.del_flashnode.flashnode_idx;
@@ -3603,7 +3602,7 @@ static int iscsi_login_flashnode(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.login_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_login_fnode;
+		goto put_host;
 	}
 
 	idx = ev->u.login_flashnode.flashnode_idx;
@@ -3655,7 +3654,7 @@ static int iscsi_logout_flashnode(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.logout_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_logout_fnode;
+		goto put_host;
 	}
 
 	idx = ev->u.logout_flashnode.flashnode_idx;
@@ -3705,7 +3704,7 @@ static int iscsi_logout_flashnode_sid(struct iscsi_transport *transport,
 		pr_err("%s could not find host no %u\n",
 		       __func__, ev->u.logout_flashnode.host_no);
 		err = -ENODEV;
-		goto exit_logout_sid;
+		goto put_host;
 	}
 
 	session = iscsi_session_lookup(ev->u.logout_flashnode_sid.sid);

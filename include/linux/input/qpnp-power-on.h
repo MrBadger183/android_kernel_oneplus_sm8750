@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2012-2015, 2017-2019, 2021 The Linux Foundation.
  * All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef QPNP_PON_H
@@ -152,7 +152,7 @@ int qpnp_pon_modem_pwr_off(enum pon_power_off_type type);
 #else
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(6, 6, 0))
-static inline int qpnp_pon_system_pwr_off(enum pon_power_off_type type)
+static int qpnp_pon_system_pwr_off(enum pon_power_off_type type)
 {
 	return -ENODEV;
 }
@@ -167,9 +167,8 @@ static inline int qpnp_pon_trigger_config(enum pon_trigger_source pon_src,
 {
 	return -ENODEV;
 }
-
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(6, 6, 0))
-static inline int qpnp_pon_wd_config(bool enable)
+int qpnp_pon_wd_config(bool enable)
 {
 	return -ENODEV;
 }

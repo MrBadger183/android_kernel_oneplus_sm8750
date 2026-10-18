@@ -644,40 +644,21 @@ __close_file_table_ids(struct ksmbd_file_table *ft,
 		       bool (*skip)(struct ksmbd_tree_connect *tcon,
 				    struct ksmbd_file *fp))
 {
-	struct ksmbd_file *fp;
-	unsigned int id = 0;
-	int num = 0;
+	unsigned int			id;
+	struct ksmbd_file		*fp;
+	int				num = 0;
 
-	while (1) {
-		write_lock(&ft->lock);
-		fp = idr_get_next(ft->idr, &id);
-		if (!fp) {
-			write_unlock(&ft->lock);
-			break;
-		}
-
-		if (skip(tcon, fp) ||
-		    !atomic_dec_and_test(&fp->refcount)) {
-			id++;
-			write_unlock(&ft->lock);
+	idr_for_each_entry(ft->idr, fp, id) {
+		if (skip(tcon, fp))
 			continue;
-		}
 
 		set_close_state_blocked_works(fp);
-		idr_remove(ft->idr, fp->volatile_id);
-		fp->volatile_id = KSMBD_NO_FID;
-		write_unlock(&ft->lock);
 
-		down_write(&fp->f_ci->m_lock);
-		list_del_init(&fp->node);
-		up_write(&fp->f_ci->m_lock);
-
+		if (!atomic_dec_and_test(&fp->refcount))
+			continue;
 		__ksmbd_close_fd(ft, fp);
-
 		num++;
-		id++;
 	}
-
 	return num;
 }
 

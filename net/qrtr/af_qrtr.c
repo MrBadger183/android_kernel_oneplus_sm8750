@@ -44,9 +44,6 @@
 
 #define AID_VENDOR_QRTR	KGIDT_INIT(2906)
 
-#define QRTR_LOCAL_PVM_NODE_ID	0x1
-#define QRTR_LOCAL_MDM_NODE_ID	0x2
-
 /**
  * struct qrtr_hdr_v1 - (I|R)PCrouter packet header version 1
  * @version: protocol version
@@ -122,11 +119,6 @@ struct qrtr_sock {
 	spinlock_t signal_lock;
 };
 
-static inline int is_primary(int __nid)
-{
-	return ((__nid) == QRTR_LOCAL_PVM_NODE_ID) || ((__nid) == QRTR_LOCAL_MDM_NODE_ID);
-}
-
 static inline struct qrtr_sock *qrtr_sk(struct sock *sk)
 {
 	BUILD_BUG_ON(offsetof(struct qrtr_sock, sk) != 0);
@@ -153,9 +145,9 @@ u32 qrtr_ports_next = QRTR_MIN_EPH_SOCKET;
 static DEFINE_SPINLOCK(qrtr_port_lock);
 
 /* backup buffers */
-#define QRTR_BACKUP_HI_NUM	5
+#define QRTR_BACKUP_HI_NUM	10
 #define QRTR_BACKUP_HI_SIZE	SZ_16K
-#define QRTR_BACKUP_LO_NUM	20
+#define QRTR_BACKUP_LO_NUM	40
 #define QRTR_BACKUP_LO_SIZE	SZ_1K
 static struct sk_buff_head qrtr_backup_lo;
 static struct sk_buff_head qrtr_backup_hi;
@@ -1025,6 +1017,7 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	size_t size;
 	int errcode;
 	int svc_id;
+
 	gfp_t flag;
 
 	if (len == 0 || len & 3)
@@ -1815,101 +1808,6 @@ static int qrtr_local_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 	return 0;
 }
 
-static struct sk_buff *qrtr_sock_alloc_skb_send(struct sock *sk,
-						struct msghdr *msg,
-						size_t len, int *rc)
-{
-	struct sk_buff *skb;
-	int pdata_len = 0;
-	int data_len = 0;
-	size_t plen;
-
-	plen = (len + 3) & ~3;
-
-	/* When PVM (node id is 1) communicating with other edges via RPMSG transport and
-	 * able to handle fragmented data if the size of the packet is more that 16kb.
-	 * So data allocation part placed in the QRTR header will benefit to accommodate
-	 * qrtr msg up to 64kb as PVM has enough memory.
-	 * When TUIVM communicating with PVM, keep ONLY QRTR header as the header part and
-	 * move all the data allocations of qrtr msg to data allocation argument of the
-	 * sock_alloc_send_pskb api to not allocate huge contiguous memory in skb.
-	 * This can be removed once we add support for the rpmsg and MHI to take
-	 * iovec structures.
-	 */
-
-	if (is_primary(qrtr_local_nid)) {
-		if (plen > SKB_MAX_ALLOC) {
-			data_len = min_t(size_t,
-					 plen - SKB_MAX_ALLOC,
-					 MAX_SKB_FRAGS * PAGE_SIZE);
-			pdata_len = PAGE_ALIGN(data_len);
-
-			BUILD_BUG_ON(SKB_MAX_ALLOC < PAGE_SIZE);
-		}
-
-		skb = sock_alloc_send_pskb(sk, QRTR_HDR_MAX_SIZE + (plen - data_len),
-					   pdata_len, msg->msg_flags & MSG_DONTWAIT,
-					   rc, PAGE_ALLOC_COSTLY_ORDER);
-		if (!skb) {
-			*rc = -ENOMEM;
-			return NULL;
-		}
-
-		skb_reserve(skb, QRTR_HDR_MAX_SIZE);
-
-		/* len is used by the enqueue functions and should remain accurate
-		 * regardless of padding or allocation size
-		 */
-		skb_put(skb, len - data_len);
-		skb->data_len = data_len;
-		skb->len = len;
-	} else {
-		if (plen > PAGE_SIZE) {
-			data_len = min_t(size_t,
-					 plen - PAGE_SIZE, MAX_SKB_FRAGS * PAGE_SIZE);
-			pdata_len = PAGE_ALIGN(data_len);
-
-			BUILD_BUG_ON(SKB_MAX_ALLOC < PAGE_SIZE);
-		}
-
-		if (data_len) {
-			skb = sock_alloc_send_pskb(sk, QRTR_HDR_MAX_SIZE,
-						   (plen - data_len) + pdata_len,
-						   msg->msg_flags & MSG_DONTWAIT,
-						   rc, PAGE_ALLOC_COSTLY_ORDER);
-			if (!skb) {
-				*rc = -ENOMEM;
-				return NULL;
-			}
-
-			/* len is used by the enqueue functions and should remain accurate
-			 * regardless of padding or allocation size
-			 */
-			skb_reserve(skb, QRTR_HDR_MAX_SIZE);
-			skb->data_len = (((plen - data_len) + pdata_len) - QRTR_HDR_MAX_SIZE);
-			skb->len = (plen - data_len) + pdata_len;
-		} else {
-			skb = sock_alloc_send_pskb(sk, QRTR_HDR_MAX_SIZE + (plen - data_len),
-						   pdata_len, msg->msg_flags & MSG_DONTWAIT,
-						   rc, PAGE_ALLOC_COSTLY_ORDER);
-			if (!skb) {
-				*rc = -ENOMEM;
-				return NULL;
-			}
-
-			/* len is used by the enqueue functions and should remain accurate
-			 * regardless of padding or allocation size
-			 */
-			skb_reserve(skb, QRTR_HDR_MAX_SIZE);
-			skb_put(skb, len - data_len);
-			skb->data_len = data_len;
-			skb->len = len;
-		}
-	}
-
-	return skb;
-}
-
 /* Queue packet for broadcast. */
 static int qrtr_bcast_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 			      int type, struct sockaddr_qrtr *from,
@@ -1948,6 +1846,9 @@ static int qrtr_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	struct qrtr_node *node;
 	struct qrtr_node *srv_node;
 	struct sk_buff *skb;
+	int pdata_len = 0;
+	int data_len = 0;
+	size_t plen;
 	u32 type;
 	int rc;
 
@@ -2007,10 +1908,31 @@ static int qrtr_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 			ipc->state = node->nid;
 	}
 
-	skb = qrtr_sock_alloc_skb_send(sk, msg, len, &rc);
-	if (!skb)
-		goto out_node;
+	plen = (len + 3) & ~3;
+	if (plen > SKB_MAX_ALLOC) {
+		data_len = min_t(size_t,
+				 plen - SKB_MAX_ALLOC,
+				 MAX_SKB_FRAGS * PAGE_SIZE);
+		pdata_len = PAGE_ALIGN(data_len);
 
+		BUILD_BUG_ON(SKB_MAX_ALLOC < PAGE_SIZE);
+	}
+	skb = sock_alloc_send_pskb(sk, QRTR_HDR_MAX_SIZE + (plen - data_len),
+				   pdata_len, msg->msg_flags & MSG_DONTWAIT,
+				   &rc, PAGE_ALLOC_COSTLY_ORDER);
+	if (!skb) {
+		rc = -ENOMEM;
+		goto out_node;
+	}
+
+	skb_reserve(skb, QRTR_HDR_MAX_SIZE);
+
+	/* len is used by the enqueue functions and should remain accurate
+	 * regardless of padding or allocation size
+	 */
+	skb_put(skb, len - data_len);
+	skb->data_len = data_len;
+	skb->len = len;
 	rc = skb_copy_datagram_from_iter(skb, 0, &msg->msg_iter, len);
 	if (rc) {
 		kfree_skb(skb);

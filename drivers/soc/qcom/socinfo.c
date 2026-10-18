@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2009-2017, 2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2017-2019, Linaro Ltd.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -59,11 +59,9 @@ enum {
 	HW_PLATFORM_SBC = 24,
 	HW_PLATFORM_ADP = 25,
 	HW_PLATFORM_HDK = 31,
-	HW_PLATFORM_IOT = 32,
 	HW_PLATFORM_ATP = 33,
 	HW_PLATFORM_IDP = 34,
 	HW_PLATFORM_CRD = 40,
-	HW_PLATFORM_WDP = 36,
 	HW_PLATFORM_INVALID
 };
 
@@ -86,11 +84,9 @@ static const char * const hw_platform[] = {
 	[HW_PLATFORM_SBC] = "SBC",
 	[HW_PLATFORM_ADP] = "ADP",
 	[HW_PLATFORM_HDK] = "HDK",
-	[HW_PLATFORM_IOT] = "IOT",
 	[HW_PLATFORM_ATP] = "ATP",
 	[HW_PLATFORM_IDP] = "IDP",
 	[HW_PLATFORM_CRD] = "CRD",
-	[HW_PLATFORM_WDP] = "WDP",
 };
 
 enum {
@@ -137,25 +133,6 @@ static const char * const hw_platform_feature_code[] = {
 	[SOCINFO_FC_AF] = "AF",
 	[SOCINFO_FC_AG] = "AG",
 	[SOCINFO_FC_AH] = "AH",
-};
-
-static const char * const hw_platform_wfeature_code[] = {
-	[SOCINFO_FC_W0 - SOCINFO_FC_W0] = "W0",
-	[SOCINFO_FC_W1 - SOCINFO_FC_W0] = "W1",
-	[SOCINFO_FC_W2 - SOCINFO_FC_W0] = "W2",
-	[SOCINFO_FC_W3 - SOCINFO_FC_W0] = "W3",
-	[SOCINFO_FC_W4 - SOCINFO_FC_W0] = "W4",
-	[SOCINFO_FC_W5 - SOCINFO_FC_W0] = "W5",
-	[SOCINFO_FC_W6 - SOCINFO_FC_W0] = "W6",
-	[SOCINFO_FC_W7 - SOCINFO_FC_W0] = "W7",
-	[SOCINFO_FC_W8 - SOCINFO_FC_W0] = "W8",
-	[SOCINFO_FC_W9 - SOCINFO_FC_W0] = "W9",
-	[SOCINFO_FC_WA - SOCINFO_FC_W0] = "WA",
-	[SOCINFO_FC_WB - SOCINFO_FC_W0] = "WB",
-	[SOCINFO_FC_WC - SOCINFO_FC_W0] = "WC",
-	[SOCINFO_FC_WD - SOCINFO_FC_W0] = "WD",
-	[SOCINFO_FC_WE - SOCINFO_FC_W0] = "WE",
-	[SOCINFO_FC_WF - SOCINFO_FC_W0] = "WF",
 };
 
 static const char * const hw_platform_ifeature_code[] = {
@@ -297,6 +274,7 @@ struct socinfo_params {
 	u32 boot_cluster;
 	u32 boot_core;
 	u32 raw_package_type;
+	u32 nsubpart_feat_array_offset;
 };
 
 struct smem_image_version {
@@ -626,9 +604,6 @@ static const struct soc_id soc_id[] = {
 	{ qcom_board_id(SG_PARROT) },
 	{ qcom_board_id(SG_PARROTP) },
 	{ qcom_board_id(PARROTPRO) },
-	{ qcom_board_id(PARROTPROP) },
-	{ qcom_board_id(PARROTPROQ) },
-	{ qcom_board_id(PARROTLITE) },
 	{ qcom_board_id(RAVELIN) },
 	{ qcom_board_id(RAVELINP) },
 	{ qcom_board_id(SG_RAVELIN) },
@@ -639,21 +614,8 @@ static const struct soc_id soc_id[] = {
 	{ qcom_board_id(IPQ5302) },
 	{ qcom_board_id(IPQ5300) },
 	{ qcom_board_id(MONACO) },
-	{ qcom_board_id(MONACOP) },
 	{ qcom_board_id(TUNA) },
-	{ qcom_board_id(TUNA7) },
-	{ qcom_board_id(TUNAP) },
 	{ qcom_board_id(KERA) },
-	{ qcom_board_id(KERAP) },
-	{ qcom_board_id(KERAP_QMB) },
-	{ qcom_board_id(KERAP_QNA) },
-	{ qcom_board_id(QCS610) },
-	{ qcom_board_id(CQ8750S) },
-	{ qcom_board_id(CQ8725S) },
-	{ qcom_board_id(MONTAGUE) },
-	{ qcom_board_id(MONTAGUEP) },
-	{ qcom_board_id(CQ7790S) },
-	{ qcom_board_id(CQ7790M) },
 };
 
 static struct attribute *msm_custom_socinfo_attrs[MAX_SOCINFO_ATTRS];
@@ -792,8 +754,6 @@ static const char *socinfo_get_feature_code_mapping(void)
 
 	if (id > SOCINFO_FC_UNKNOWN && id < SOCINFO_FC_EXT_RESERVE)
 		return hw_platform_feature_code[id];
-	else if (id >= SOCINFO_FC_W0 && id < SOCINFO_FC_SUBPART_RESERVE)
-		return hw_platform_wfeature_code[id - SOCINFO_FC_W0];
 	else if (id >= SOCINFO_FC_Y0 && id < SOCINFO_FC_INT_RESERVE)
 		return hw_platform_ifeature_code[id - SOCINFO_FC_Y0];
 
@@ -912,47 +872,29 @@ uint32_t socinfo_get_partinfo_vulkan_id(unsigned int part_id)
 }
 EXPORT_SYMBOL(socinfo_get_partinfo_vulkan_id);
 
-uint32_t socinfo_get_cluster_info(void)
+uint32_t
+socinfo_get_cluster_info(enum subset_cluster_type cluster)
 {
-	uint32_t cluster_info = 0, num_cluster, offset;
-	uint32_t num_cpu_offset, shift = 0;
-	void *tmp_cluster_val;
+	uint32_t sub_cluster, num_cluster, offset;
+	void *cluster_val;
 	void *info = socinfo;
-	void *cpuinfo = socinfo;
-	int i;
+
+	if (cluster >= NUM_CLUSTERS_MAX) {
+		pr_err("Bad cluster\n");
+		return -EINVAL;
+	}
 
 	num_cluster = socinfo_get_num_clusters();
 	offset = socinfo_get_ncluster_array_offset();
+
 	if (!num_cluster || !offset)
-		return 0;
+		return -EINVAL;
 
 	info += offset;
-	if (socinfo_format >= SOCINFO_VERSION(0, 22)) {
-		num_cpu_offset = le32_to_cpu(socinfo->ncluster_cores_array_offset);
-		if (!num_cpu_offset)
-			return 0;
+	cluster_val = info + (sizeof(uint32_t) * cluster);
+	sub_cluster = get_unaligned_le32(cluster_val);
 
-		cpuinfo += num_cpu_offset;
-		for (i = 0; i < num_cluster; i++) {
-			void *tmp_cpu_val;
-			int cluster_val, num_cpu_val;
-
-			tmp_cluster_val = info + (sizeof(uint32_t) * i);
-			cluster_val = get_unaligned_le32(tmp_cluster_val);
-			tmp_cpu_val = cpuinfo + (sizeof(uint32_t) * i);
-			num_cpu_val = get_unaligned_le32(tmp_cpu_val);
-			cluster_info |= (cluster_val & ((1 << num_cpu_val) - 1)) << shift;
-			shift += num_cpu_val;
-		}
-	} else if (num_cluster == 1) {
-		tmp_cluster_val = info + sizeof(uint32_t) * (num_cluster - 1);
-		cluster_info = get_unaligned_le32(tmp_cluster_val);
-	} else {
-		pr_err("Socinfo version < 22 and num_cluster > 1\n");
-		return 0;
-	}
-
-	return cluster_info;
+	return sub_cluster;
 }
 EXPORT_SYMBOL(socinfo_get_cluster_info);
 
@@ -1173,7 +1115,9 @@ msm_get_subset_cores(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
-	return scnprintf(buf, PAGE_SIZE, "%x\n", socinfo_get_cluster_info());
+	uint32_t sub_cluster = socinfo_get_cluster_info(CLUSTER_CPUSS);
+
+	return scnprintf(buf, PAGE_SIZE, "%x\n", sub_cluster);
 }
 ATTR_DEFINE(subset_cores);
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2010,2015,2019 The Linux Foundation. All rights reserved.
  * Copyright (C) 2015 Linaro Ltd.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #define pr_fmt(fmt)     "qcom-scm: %s: " fmt, __func__
 
@@ -30,7 +30,6 @@
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/ktime.h>
-#include <linux/gunyah/gh_rm_drv.h>
 
 #include "qcom_scm.h"
 #include "qtee_shmbridge_internal.h"
@@ -68,8 +67,6 @@ struct qcom_scm {
 	u64 dload_mode_addr;
 };
 
-static enum qcom_scm_custom_reset_type qcom_scm_custom_reset_type = QCOM_SCM_RST_NONE;
-
 DEFINE_SEMAPHORE(qcom_scm_sem_lock, 1);
 
 /* Each bit configures cold/warm boot address for one of the 4 CPUs */
@@ -103,8 +100,6 @@ static const char * const qcom_scm_convention_names[] = {
 };
 
 static struct qcom_scm *__scm;
-
-#define SCM_NOT_INITIALIZED()   (unlikely(!__scm) ? pr_err("SCM not initialized\n") : 0)
 
 static int qcom_scm_clk_enable(void)
 {
@@ -610,29 +605,6 @@ int qcom_scm_config_cpu_errata(void)
 	return qcom_scm_call(__scm->dev, &desc, NULL);
 }
 EXPORT_SYMBOL(qcom_scm_config_cpu_errata);
-
-void qcom_scm_phy_update_scm_level_shifter(u32 val)
-{
-	int ret;
-	struct qcom_scm_desc desc = {
-		.svc = QCOM_SCM_SVC_BOOT,
-		.cmd = QCOM_SCM_QUSB2PHY_LVL_SHIFTER_CMD_ID,
-		.owner = ARM_SMCCC_OWNER_SIP
-	};
-
-	if (SCM_NOT_INITIALIZED())
-		return;
-
-	desc.args[0] = val;
-	desc.args[1] = 0;
-	desc.arginfo = QCOM_SCM_ARGS(2);
-
-	ret = qcom_scm_call(__scm->dev, &desc, NULL);
-	if (ret)
-		pr_err("Failed to update scm level shifter=0x%x\n", ret);
-
-}
-EXPORT_SYMBOL_GPL(qcom_scm_phy_update_scm_level_shifter);
 
 /**
  * qcom_scm_pas_init_image() - Initialize peripheral authentication service
@@ -1270,14 +1242,11 @@ int qcom_scm_assign_mem(phys_addr_t mem_addr, size_t mem_sz,
 	size_t dest_sz;
 	size_t src_sz;
 	size_t ptr_sz;
-	u64 next_vm;
+	int next_vm;
 	__le32 *src;
 	void *ptr;
 	int ret, i, b;
 	u64 srcvm_bits = *srcvm;
-
-	if (!gh_rm_needs_scm_assign(srcvm, newvm, dest_cnt))
-		return 0;
 
 	src_sz = hweight64(srcvm_bits) * sizeof(*src);
 	mem_to_map_sz = sizeof(*mem_to_map);
@@ -2135,21 +2104,6 @@ static int qcom_scm_reboot(struct device *dev)
 	return qcom_scm_call_atomic(dev, &desc, NULL);
 }
 
-int qcom_scm_custom_reboot(struct device *dev,
-			enum qcom_scm_custom_reset_type reboot_type)
-{
-	struct qcom_scm_desc desc = {
-		.svc = QCOM_SCM_SVC_OEM_POWER,
-		.cmd = QCOM_SCM_OEM_POWER_CUSTOM_REBOOT,
-		.owner = ARM_SMCCC_OWNER_OEM,
-	};
-
-	desc.args[0] = reboot_type;
-	desc.arginfo = QCOM_SCM_ARGS(1);
-
-	return qcom_scm_call_atomic(dev, &desc, NULL);
-}
-
 bool qcom_scm_lmh_dcvsh_available(void)
 {
 	return __qcom_scm_is_call_available(__scm->dev, QCOM_SCM_SVC_LMH, QCOM_SCM_LMH_LIMIT_DCVSH);
@@ -2252,30 +2206,12 @@ int qcom_scm_query_encrypted_log_feature(u64 *enabled)
 	struct qcom_scm_res res;
 
 	ret = qcom_scm_call(__scm->dev, &desc, &res);
-	if (!ret)
+	if (enabled)
 		*enabled = res.result[0];
 
 	return ret;
 }
 EXPORT_SYMBOL(qcom_scm_query_encrypted_log_feature);
-
-int qcom_scm_query_log_status(u64 *status)
-{
-	int ret;
-	struct qcom_scm_desc desc = {
-		.svc = QCOM_SCM_SVC_QSEELOG,
-		.cmd = QCOM_SCM_QUERY_LOG_STATUS,
-		.owner = ARM_SMCCC_OWNER_TRUSTED_OS
-	};
-	struct qcom_scm_res res;
-
-	ret = qcom_scm_call(__scm->dev, &desc, &res);
-	if (!ret)
-		*status = res.result[0];
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(qcom_scm_query_log_status);
 
 int qcom_scm_request_encrypted_log(phys_addr_t buf,
 				   size_t len,
@@ -2488,20 +2424,9 @@ static int qcom_scm_do_restart(struct notifier_block *this, unsigned long event,
 			      void *ptr)
 {
 	struct qcom_scm *scm = container_of(this, struct qcom_scm, restart_nb);
-	char *cmd = ptr;
 
-	if (reboot_mode == REBOOT_WARM &&
-		qcom_scm_custom_reset_type == QCOM_SCM_RST_NONE)
+	if (reboot_mode == REBOOT_WARM)
 		qcom_scm_reboot(scm->dev);
-	else if (cmd && !strcmp(cmd, "rtc"))
-		qcom_scm_custom_reset_type = QCOM_SCM_RST_SHUTDOWN_TO_RTC_MODE;
-
-	else if (cmd && !strcmp(cmd, "twm"))
-		qcom_scm_custom_reset_type = QCOM_SCM_RST_SHUTDOWN_TO_TWM_MODE;
-
-	if (qcom_scm_custom_reset_type > QCOM_SCM_RST_NONE &&
-			qcom_scm_custom_reset_type < QCOM_SCM_RST_MAX)
-		qcom_scm_custom_reboot(scm->dev, qcom_scm_custom_reset_type);
 
 	return NOTIFY_OK;
 }
@@ -2597,7 +2522,6 @@ static void scm_irq_work(struct work_struct *work)
 	struct completion *wq_to_wake;
 	struct qcom_scm_waitq *w = container_of(work, struct qcom_scm_waitq, scm_irq_work);
 	struct qcom_scm *scm = container_of(w, struct qcom_scm, waitq);
-	bool multi_smc = (scm->waitq.wq_feature == QCOM_SCM_MULTI_SMC_WHITE_LIST_ALLOW);
 
 	if (qcom_scm_convention != SMC_CONVENTION_ARM_64) {
 		/* Unsupported */
@@ -2605,7 +2529,7 @@ static void scm_irq_work(struct work_struct *work)
 	}
 
 	do {
-		ret = scm_get_wq_ctx(&wq_ctx, &flags, &more_pending, multi_smc);
+		ret = scm_get_wq_ctx(&wq_ctx, &flags, &more_pending);
 		if (ret) {
 			pr_err("GET_WQ_CTX SMC call failed: %d\n", ret);
 			return;

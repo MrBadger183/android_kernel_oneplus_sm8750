@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _WALT_H
@@ -23,6 +23,14 @@
 
 #define MSEC_TO_NSEC (1000 * 1000)
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include "../../oplus_cpu/sched/sched_assist/sa_fair.h"
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+#include "../kernel/oplus_cpu/sched/frame_boost/frame_group.h"
+#endif
+
 #ifdef CONFIG_HZ_300
 /*
  * Tick interval becomes to 3333333 due to
@@ -33,6 +41,7 @@
 /* Min window size (in ns) = 16ms */
 #define DEFAULT_SCHED_RAVG_WINDOW 16000000
 #endif
+
 
 /* Max window size (in ns) = 1s */
 #define MAX_SCHED_RAVG_WINDOW 1000000000
@@ -92,15 +101,10 @@ enum freq_caps {
 #define SOC_ENABLE_FT_BOOST_TO_ALL			BIT(8)
 #define SOC_ENABLE_EXPERIMENT3						BIT(9)
 #define SOC_ENABLE_PIPELINE_SWAPPING_BIT		BIT(10)
-#define SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT		BIT(11)
-#define SOC_ENABLE_FORCE_SPECIAL_PIPELINE_PINNING	BIT(12)
 
 extern int soc_sched_lib_name_capacity;
 
-/* WALT feature */
 #define WALT_FEAT_TRAILBLAZER_BIT	BIT_ULL(0)
-#define WALT_FEAT_UCLAMP_FREQ_BIT	BIT_ULL(1)
-
 extern unsigned int trailblazer_floor_freq[MAX_CLUSTERS];
 
 /*wts->flags bits*/
@@ -232,7 +236,6 @@ struct walt_sched_cluster {
 	unsigned long		util_to_cost[1024];
 	u64			found_ts;
 	struct smart_freq_cluster_info *smart_freq_info;
-	int8_t			sibling_cluster;
 };
 
 struct walt_rq {
@@ -278,8 +281,6 @@ struct walt_rq {
 
 	u64			latest_clock;
 	u32			enqueue_counter;
-	/* UCLAMP tracking */
-	unsigned long		uclamp_limit[UCLAMP_CNT];
 	u64			lrb_pipeline_start_time; /* lrb = long_running_boost */
 };
 
@@ -302,7 +303,6 @@ extern unsigned int sched_capacity_margin_up[WALT_NR_CPUS];
 extern unsigned int sched_capacity_margin_down[WALT_NR_CPUS];
 extern cpumask_t asym_cap_sibling_cpus;
 extern cpumask_t pipeline_sync_cpus;
-extern cpumask_t storage_boost_cpus;
 extern cpumask_t __read_mostly **cpu_array;
 extern int cpu_l2_sibling[WALT_NR_CPUS];
 extern void sched_update_nr_prod(int cpu, int enq);
@@ -491,7 +491,6 @@ extern unsigned int sysctl_sched_sbt_enable;
 extern unsigned int sysctl_sched_sbt_delay_windows;
 
 extern cpumask_t cpus_for_pipeline;
-extern unsigned int pipeline_swap_util_th;
 
 /* WALT cpufreq interface */
 #define WALT_CPUFREQ_ROLLOVER_BIT		BIT(0)
@@ -504,11 +503,10 @@ extern unsigned int pipeline_swap_util_th;
 #define WALT_CPUFREQ_SHARED_RAIL_BIT		BIT(7)
 #define WALT_CPUFREQ_TRAILBLAZER_BIT		BIT(8)
 #define WALT_CPUFREQ_SMART_FREQ_BIT		BIT(9)
-#define WALT_CPUFREQ_UCLAMP_BIT			BIT(10)
-#define WALT_CPUFREQ_PIPELINE_BUSY_BIT		BIT(11)
+#define WALT_CPUFREQ_PIPELINE_BUSY_BIT		BIT(10)
 
 /* CPUFREQ_REASON_LOAD is unused. If reasons value is 0, this indicates
- * that no extra features were enforced, and the frequency aligns with
+ * that no extra features were enforcd, and the frequency alligns with
  * the highest raw workload executing on one of the CPUs within the
  * corresponding cluster
  */
@@ -532,8 +530,7 @@ extern unsigned int pipeline_swap_util_th;
 #define CPUFREQ_REASON_TRAILBLAZER_CPU_BIT	BIT(16)
 #define CPUFREQ_REASON_ADAPTIVE_LVL_1_BIT	BIT(17)
 #define CPUFREQ_REASON_IPC_SMART_FREQ_BIT	BIT(18)
-#define CPUFREQ_REASON_UCLAMP_BIT		BIT(19)
-#define CPUFREQ_REASON_PIPELINE_BUSY_BIT	BIT(20)
+#define CPUFREQ_REASON_PIPELINE_BUSY_BIT	BIT(19)
 
 enum sched_boost_policy {
 	SCHED_BOOST_NONE,
@@ -909,12 +906,11 @@ static inline u64 sched_irqload(int cpu)
 		return 0;
 }
 
-extern cpumask_t walt_enforce_high_irq_cpu_mask;
 static inline int sched_cpu_high_irqload(int cpu)
 {
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu);
 
-	return wrq->high_irqload || cpumask_test_cpu(cpu, &walt_enforce_high_irq_cpu_mask);
+	return wrq->high_irqload;
 }
 
 static inline u64
@@ -1024,12 +1020,14 @@ static inline bool task_fits_capacity(struct task_struct *p,
 	return capacity * 1024 > uclamp_task_util(p) * margin;
 }
 
-extern int pipeline_fits_smaller_cpus(struct task_struct *p);
 static inline bool task_fits_max(struct task_struct *p, int dst_cpu)
 {
 	unsigned long task_boost = per_task_boost(p);
+	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 	cpumask_t other_cluster;
-	int ret = -1;
+
+	if (wts->pipeline_cpu != -1)
+		return true;
 
 	/*
 	 * If a task is affined only to cpus of cluster then it cannot be a
@@ -1040,12 +1038,6 @@ static inline bool task_fits_max(struct task_struct *p, int dst_cpu)
 		return true;
 
 	if (is_max_possible_cluster_cpu(dst_cpu))
-		return true;
-
-	ret = pipeline_fits_smaller_cpus(p);
-	if (ret == 0)
-		return false;
-	else if (ret == 1)
 		return true;
 
 	if (is_min_possible_cluster_cpu(dst_cpu)) {
@@ -1134,8 +1126,7 @@ static inline bool walt_get_rtg_status(struct task_struct *p)
 	return ret;
 }
 
-#define CPU_RESERVED			BIT(0)
-#define CPU_FIRST_ENQ_IN_WINDOW		BIT(1)
+#define CPU_RESERVED 1
 static inline int is_reserved(int cpu)
 {
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu);
@@ -1155,23 +1146,6 @@ static inline void clear_reserved(int cpu)
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu);
 
 	clear_bit(CPU_RESERVED, &wrq->walt_flags);
-}
-
-static inline bool is_cpu_flag_set(int cpu, unsigned int bit)
-{
-	struct walt_rq *wrq = &per_cpu(walt_rq, cpu);
-
-	return test_bit(bit, &wrq->walt_flags);
-}
-
-static inline void set_cpu_flag(int cpu, unsigned int bit, bool set)
-{
-	struct walt_rq *wrq = &per_cpu(walt_rq, cpu);
-
-	if (set)
-		set_bit(bit, &wrq->walt_flags);
-	else
-		clear_bit(bit, &wrq->walt_flags);
 }
 
 static inline void walt_irq_work_queue(struct irq_work *work)
@@ -1225,8 +1199,7 @@ static inline bool walt_flag_test(struct task_struct *p, unsigned int feature)
 #define WALT_RTG_MVP		0
 #define WALT_BINDER_MVP		1
 #define WALT_TASK_BOOST_MVP	2
-#define WALT_LL_MVP		3
-#define WALT_PIPELINE_MVP	4
+#define WALT_LL_PIPE_MVP	3
 
 #define WALT_NOT_MVP		-1
 
@@ -1270,6 +1243,16 @@ static inline bool is_state1(void)
 /* determine if this task should be allowed to use a partially halted cpu */
 static inline bool task_reject_partialhalt_cpu(struct task_struct *p, int cpu)
 {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (should_ux_task_skip_cpu(p, cpu))
+		return true;
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	if (fbg_skip_migration(p, task_cpu(p), cpu))
+		return true;
+#endif
+
 	if (p->prio < MAX_RT_PRIO)
 		return false;
 
@@ -1378,7 +1361,7 @@ void dec_rq_walt_stats(struct rq *rq, struct task_struct *p);
 extern bool is_obet;
 extern int oscillate_cpu;
 extern int oscillate_period_ns;
-extern bool should_oscillate(unsigned int busy_cpu, int *no_oscillate_reason);
+extern bool should_oscillate(unsigned int busy_cpu);
 extern bool now_is_sbt;
 extern bool is_sbt_or_oscillate(void);
 
@@ -1403,7 +1386,7 @@ enum WALT_DEBUG_FEAT {
 	}						\
 })
 
-/* the least significant byte is the bitmask for features and printk */
+/* the least signifcant byte is the bitmask for features and printk */
 #define WALT_PANIC_SENTINEL	0x4544DE00
 
 #define walt_debug_bitmask_panic(x) (1UL << x)
@@ -1469,9 +1452,51 @@ static inline void walt_lockdep_assert(int cond, int cpu, struct task_struct *p)
 #define walt_lockdep_assert_rq(rq, p)			\
 	walt_lockdep_assert_held(&rq->__lock, cpu_of(rq), p)
 
-extern bool pipeline_check(struct walt_rq *wrq);
-extern void pipeline_rearrange(struct walt_rq *wrq, bool need_assign_heavy);
-extern void walt_configure_single_thread_pipeline(unsigned int val);
+#ifdef CONFIG_HMBIRD_SCHED_GKI
+struct scx_sched_gki_ops {
+	void (*newidle_balance)(struct rq *this_rq,
+  					struct rq_flags *rf, int *pulled_task, int *done, bool partial_force);
+	void (*replace_next_task_fair)(struct rq *rq, struct task_struct **p,
+			struct sched_entity **se, bool *repick, bool simple, struct task_struct *prev);
+	void (*schedule)(struct task_struct *prev, struct task_struct *next, struct rq *rq);
+	void (*enqueue_task)(struct rq *rq, struct task_struct *p, int enq_flags);
+	void (*dequeue_task)(struct rq *rq, struct task_struct *p, int deq_flags);
+	void (*select_task_rq_rt)(struct task_struct *task, int cpu, int sd_flag, int wake_flags, int *new_cpu);
+	void (*rt_find_lowest_rq)(struct task_struct *task, struct cpumask *lowest_mask, int ret, int *best_cpu);
+	void (*select_task_rq_fair)(struct task_struct *p, int *target_cpu, int wake_flags, int prev_cpu);
+	void (*scheduler_tick)(struct rq *rq);
+	void (*tick_entry)(struct rq *rq);
+	int  (*sched_lpm_disallowed_time)(int cpu, u64 *timeout);
+	void (*nohz_balancer_kick)(struct rq *rq, unsigned int *flags, int *done);
+	void (*cfs_check_preempt_wakeup)(struct rq *rq, struct task_struct *p, bool *preempt, bool *nopreempt);
+	bool (*lb_tick_bypass)(struct rq *rq);
+	bool (*account_for_runnable_bypass)(struct rq *rq, struct task_struct *p, int event);
+	void (*window_rollover_run_once)(struct rq *rq);
+	void (*do_sched_yield_before)(long *skip);
+};
+
+extern struct scx_sched_gki_ops *scx_sched_ops;
+
+#define SCX_CALL_OP(op, args...) 						\
+do {														\
+	if (scx_sched_ops && scx_sched_ops->op) {					\
+		scx_sched_ops->op(args);								\
+	}														\
+}while(0)
+
+#define SCX_CALL_OP_RET(op, args...) 						\
+({																\
+	__typeof__(scx_sched_ops->op(args)) __ret = 0;				\
+	if (scx_sched_ops && scx_sched_ops->op) 							\
+			__ret = scx_sched_ops->op(args);						\
+	__ret; 														\
+})
+
+int register_scx_sched_gki_ops(struct scx_sched_gki_ops *ops);
+
+#endif
+
+extern void pipeline_check(struct walt_rq *wrq);
 extern bool enable_load_sync(int cpu);
 extern struct walt_related_thread_group *lookup_related_thread_group(unsigned int group_id);
 extern bool prev_is_sbt;
@@ -1479,12 +1504,6 @@ extern unsigned int sysctl_sched_pipeline_special;
 extern struct task_struct *pipeline_special_task;
 extern void remove_special_task(void);
 extern void set_special_task(struct task_struct *pipeline_special_local);
-extern inline unsigned long walt_lb_cpu_util(int cpu);
-extern int stop_walt_lb_active_migration(void *data);
-
-extern void walt_detach_task(struct task_struct *p, struct rq *src_rq, struct rq *dst_rq);
-extern void walt_attach_task(struct task_struct *p, struct rq *rq);
-
 #define MAX_NR_PIPELINE 3
 /* smart freq */
 #define SMART_FREQ_LEGACY_TUPLE_SIZE		3
@@ -1500,46 +1519,25 @@ extern unsigned int sysctl_ipc_freq_levels_cluster0[SMART_FMAX_IPC_MAX];
 extern unsigned int sysctl_ipc_freq_levels_cluster1[SMART_FMAX_IPC_MAX];
 extern unsigned int sysctl_ipc_freq_levels_cluster2[SMART_FMAX_IPC_MAX];
 extern unsigned int sysctl_ipc_freq_levels_cluster3[SMART_FMAX_IPC_MAX];
-extern unsigned int sysctl_legacy_freq_levels_cluster0[LEGACY_SMART_FREQ*2];
-extern unsigned int sysctl_legacy_freq_levels_cluster1[LEGACY_SMART_FREQ*2];
-extern unsigned int sysctl_legacy_freq_levels_cluster2[LEGACY_SMART_FREQ*2];
-extern unsigned int sysctl_legacy_freq_levels_cluster3[LEGACY_SMART_FREQ*2];
 extern int sched_smart_freq_ipc_handler(struct ctl_table *table, int write,
 				      void __user *buffer, size_t *lenp,
 				      loff_t *ppos);
 
-extern int sched_smart_freq_legacy_freq_handler(struct ctl_table *table, int write,
-				void __user *buffer, size_t *lenp,
-				loff_t *ppos);
-
 extern u8 smart_freq_legacy_reason_hyst_ms[LEGACY_SMART_FREQ][WALT_NR_CPUS];
 extern void update_smart_freq_legacy_reason_hyst_time(struct walt_sched_cluster *cluster);
-extern bool move_storage_load(struct rq *rq);
-
-#define MIN_UTIL_FOR_STORAGE_BALANCING		650
 
 /* frequent yielder */
 #define MAX_YIELD_CNT_PER_TASK_THR		25
 #define	YIELD_INDUCED_SLEEP			BIT(7)
 #define YIELD_CNT_MASK				0x7F
+#define MAX_YIELD_CNT_GLOBAL_THR		8000
 #define YIELD_WINDOW_SIZE_USEC			(16ULL * USEC_PER_MSEC)
 #define YIELD_WINDOW_SIZE_NSEC			(YIELD_WINDOW_SIZE_USEC * NSEC_PER_USEC)
 #define	YIELD_GRACE_PERIOD_NSEC			(4ULL * NSEC_PER_MSEC)
-#define YIELD_SLEEP_TIME_USEC			250
 #define MIN_CONTIGUOUS_YIELDING_WINDOW		3
-
-/* force frequent yielder threshold */
-#define FORCE_MAX_YIELD_CNT_GLOBAL_THR_DEFAULT	500
-#define FORCE_MIN_CONTIGUOUS_YIELDING_WINDOW	2
-#define FORCE_MAX_YIELD_SLEEP_CNT_GLOBAL_THR	4
-
-/* yield boundary*/
-#define MIN_FRAME_YIELD_INTERVAL_NSEC		(1000ULL * NSEC_PER_USEC)
-#define YIELD_SLEEP_HEADROOM			300000ULL
-#define FRAME120_WINDOW_NSEC			8333333
-#define FRAME90_WINDOW_NSEC			11111111
-#define FRAME60_WINDOW_NSEC			16666667
-
+#define YIELD_SLEEP_TIME_USEC			250
+#define MAX_YIELD_SLEEP_CNT_GLOBAL_THR		(YIELD_WINDOW_SIZE_USEC /		\
+								YIELD_SLEEP_TIME_USEC / 2)
 extern u8 contiguous_yielding_windows;
 #define NUM_PIPELINE_BUSY_THRES 3
 extern unsigned int sysctl_sched_lrpb_active_ms[NUM_PIPELINE_BUSY_THRES];
@@ -1564,14 +1562,4 @@ extern unsigned int load_sync_low_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_low_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_high_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_high_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
-extern unsigned int sysctl_pipeline_special_task_util_thres;
-extern unsigned int sysctl_single_thread_pipeline;
-extern unsigned int sysctl_pipeline_non_special_task_util_thres;
-extern unsigned int sysctl_pipeline_pin_thres_low_pct;
-extern unsigned int sysctl_pipeline_pin_thres_high_pct;
-extern unsigned int sysctl_pipeline_rearrange_delay_ms[2];
-DECLARE_PER_CPU(unsigned int, walt_yield_to_sleep);
-extern unsigned int walt_sched_yield_counter;
-extern unsigned int sysctl_force_frequent_yielder;
-void account_yields(u64 window_start);
 #endif /* _WALT_H */

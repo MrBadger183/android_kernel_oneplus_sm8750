@@ -153,16 +153,10 @@ enum ibb_rev4 {
 
 static inline bool is_spur_mitigation_supported(struct ibb_regulator *ibb)
 {
-	switch (ibb->subtype) {
-	case PMD802X_IBB:
+	if ((ibb->subtype == PM8350B_IBB) && (ibb->rev4 >= IBB_ANA_MAJOR_V2))
 		return true;
-	case PM8350B_IBB:
-		if (ibb->rev4 >= IBB_ANA_MAJOR_V2)
-			return true;
-		fallthrough;
-	default:
-		return false;
-	}
+
+	return false;
 }
 
 static inline bool is_phase_ctrl_supported(struct ibb_regulator *ibb)

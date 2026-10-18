@@ -1,6 +1,6 @@
-load(":image_opts.bzl", "boot_image_opts")
-load(":msm_kernel_la.bzl", "define_msm_la")
 load(":target_variants.bzl", "la_variants")
+load(":msm_kernel_la.bzl", "define_msm_la")
+load(":image_opts.bzl", "boot_image_opts")
 
 target_name = "parrot"
 
@@ -79,7 +79,6 @@ def define_parrot():
         "drivers/iommu/qcom_iommu_util.ko",
         "drivers/irqchip/msm_show_resume_irq.ko",
         "drivers/irqchip/qcom-pdc.ko",
-        "drivers/leds/leds-aw2016.ko",
         "drivers/leds/leds-qpnp-flash-v2.ko",
         "drivers/leds/leds-qpnp-vibrator-ldo.ko",
         "drivers/leds/leds-qti-tri-led.ko",
@@ -106,13 +105,11 @@ def define_parrot():
         "drivers/power/reset/qcom-reboot-reason.ko",
         "drivers/power/reset/reboot-mode.ko",
         "drivers/power/supply/qti_battery_charger.ko",
-        "drivers/power/supply/schgm-flash.ko",
         "drivers/pwm/pwm-qti-lpg.ko",
         "drivers/regulator/debug-regulator.ko",
         "drivers/regulator/proxy-consumer.ko",
         "drivers/regulator/qcom-amoled-regulator.ko",
         "drivers/regulator/qcom_pm8008-regulator.ko",
-        "drivers/regulator/qpnp-lcdb-regulator.ko",
         "drivers/regulator/qti-fixed-regulator.ko",
         "drivers/regulator/qti-ocp-notifier.ko",
         "drivers/regulator/rpmh-regulator.ko",
@@ -147,7 +144,6 @@ def define_parrot():
         "drivers/soc/qcom/dmesg_dumper.ko",
         "drivers/soc/qcom/eud.ko",
         "drivers/soc/qcom/fsa4480-i2c.ko",
-        "drivers/soc/qcom/gh_tlmm_vm_mem_access.ko",
         "drivers/soc/qcom/gic_intr_routing.ko",
         "drivers/soc/qcom/hung_task_enh.ko",
         "drivers/soc/qcom/mdt_loader.ko",
@@ -182,7 +178,6 @@ def define_parrot():
         "drivers/soc/qcom/qsee_ipc_irq_bridge.ko",
         "drivers/soc/qcom/qti_battery_debug.ko",
         "drivers/soc/qcom/qti_pmic_glink.ko",
-        "drivers/soc/qcom/rq_stats.ko",
         "drivers/soc/qcom/secure_buffer.ko",
         "drivers/soc/qcom/smem.ko",
         "drivers/soc/qcom/smp2p.ko",
@@ -207,7 +202,6 @@ def define_parrot():
         "drivers/thermal/qcom/qti_devfreq_cdev.ko",
         "drivers/thermal/qcom/qti_qmi_cdev.ko",
         "drivers/thermal/qcom/qti_qmi_sensor_v2.ko",
-        "drivers/thermal/qcom/qti_thermal_vendor_hooks.ko",
         "drivers/thermal/qcom/qti_userspace_cdev.ko",
         "drivers/thermal/qcom/sdpm_clk.ko",
         "drivers/thermal/qcom/thermal_config.ko",
@@ -231,7 +225,6 @@ def define_parrot():
         "drivers/usb/phy/phy-msm-ssusb-qmp.ko",
         "drivers/usb/phy/phy-qcom-emu.ko",
         "drivers/usb/typec/ucsi/ucsi_qti_glink.ko",
-        "drivers/video/backlight/qcom-spmi-wled.ko",
         "drivers/virt/gunyah/gh_ctrl.ko",
         "drivers/virt/gunyah/gh_dbl.ko",
         "drivers/virt/gunyah/gh_irq_lend.ko",
@@ -297,6 +290,7 @@ def define_parrot():
             variant = variant,
             in_tree_module_list = mod_list,
             boot_image_opts = boot_image_opts(
+                earlycon_addr = "qcom_geni,0x0098c000",
                 kernel_vendor_cmdline_extras = kernel_vendor_cmdline_extras,
                 board_kernel_cmdline_extras = board_kernel_cmdline_extras,
                 board_bootconfig_extras = board_bootconfig_extras,

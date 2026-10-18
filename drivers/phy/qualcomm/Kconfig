@@ -127,15 +127,6 @@ config PHY_QCOM_UFS
 
 if PHY_QCOM_UFS
 
-config PHY_QCOM_UFS_V3
-	tristate "Qualcomm Technologies, Inc. UFS V3"
-	depends on PHY_QCOM_UFS
-	help
-	  Enables support for UFS PHY on Qualcomm Technologies, Inc.
-	  chipsets.
-	  Support for 11nm UFS QMP phy present on QCOM chipsets.
-	  This is required to enable UFS on qcs610 chipset.
-
 config PHY_QCOM_UFS_V4
 	tristate "Qualcomm Technologies, Inc. UFS V4"
 	depends on PHY_QCOM_UFS
@@ -152,23 +143,6 @@ config PHY_QCOM_UFS_QRBTC_SDM845
 	  The support is restricted to HS-G1 only on both Tx and Rx.
 	  No low power mode support is present.
 	  Doesn't restrict number of lanes.
-
-config PHY_QCOM_UFS_V4_NIOBE
-	tristate "Qualcomm Technologies, Inc. UFS Niobe Phy Driver"
-	depends on PHY_QCOM_UFS
-	help
-	  Support for UFS phy present on QCOM Niobe chipsets.
-	  This is required to enable UFS on Niobe chipset.
-	  To compile this driver as a module, choose M here.
-	  This would be needed for all niobe ufs platforms.
-
-config PHY_QCOM_UFS_V4_PINEAPPLE
-	tristate "Qualcomm Technologies, Inc. UFS Pineapple Phy Driver"
-	depends on PHY_QCOM_UFS
-	help
-	  Support for UFS phy present on QCOM Pineapple chipsets.
-	  This is required to enable UFS on Pineapple chipset.
-	  To compile this driver as a module, choose M here.
 
 config PHY_QCOM_UFS_V4_SUN
 	tristate "Qualcomm Technologies, Inc. UFS Sun Phy Driver"

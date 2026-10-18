@@ -1,7 +1,8 @@
-load(":image_opts.bzl", "boot_image_opts")
-load(":msm_kernel_16k_la.bzl", "define_msm_16k_la")
-load(":msm_kernel_la.bzl", "define_msm_la")
 load(":target_variants.bzl", "la_variants")
+load(":msm_kernel_la.bzl", "define_msm_la")
+load(":image_opts.bzl", "boot_image_opts")
+
+load("//oplus/bazel:oplus_modules_define.bzl", _get_oplus_features = "oplus_ddk_get_oplus_features")
 
 target_name = "sun"
 
@@ -17,32 +18,25 @@ def define_sun():
         "drivers/clk/clk-scmi.ko",
         "drivers/clk/qcom/cambistmclkcc-sun.ko",
         "drivers/clk/qcom/cambistmclkcc-tuna.ko",
-        "drivers/clk/qcom/camcc-kera.ko",
         "drivers/clk/qcom/camcc-sun.ko",
         "drivers/clk/qcom/camcc-tuna.ko",
         "drivers/clk/qcom/clk-dummy.ko",
         "drivers/clk/qcom/clk-qcom.ko",
         "drivers/clk/qcom/clk-rpmh.ko",
-        "drivers/clk/qcom/debugcc-kera.ko",
         "drivers/clk/qcom/debugcc-sun.ko",
-        "drivers/clk/qcom/debugcc-tuna.ko",
         "drivers/clk/qcom/dispcc-sun.ko",
-        "drivers/clk/qcom/dispcc-tuna.ko",
         "drivers/clk/qcom/evacc-sun.ko",
         "drivers/clk/qcom/evacc-tuna.ko",
         "drivers/clk/qcom/gcc-kera.ko",
         "drivers/clk/qcom/gcc-sun.ko",
         "drivers/clk/qcom/gcc-tuna.ko",
         "drivers/clk/qcom/gdsc-regulator.ko",
-        "drivers/clk/qcom/gpucc-kera.ko",
         "drivers/clk/qcom/gpucc-sun.ko",
         "drivers/clk/qcom/gpucc-tuna.ko",
         "drivers/clk/qcom/tcsrcc-sun.ko",
         "drivers/clk/qcom/tcsrcc-tuna.ko",
         "drivers/clk/qcom/videocc-sun.ko",
         "drivers/clk/qcom/videocc-tuna.ko",
-        "drivers/cpufreq/qcom-cpufreq-hw.ko",
-        "drivers/cpufreq/qcom-cpufreq-hw-debug.ko",
         "drivers/cpufreq/qcom-cpufreq-thermal.ko",
         "drivers/cpuidle/governors/qcom_lpm.ko",
         "drivers/crypto/qcom-rng.ko",
@@ -89,11 +83,12 @@ def define_sun():
         "drivers/iio/adc/qcom-vadc-common.ko",
         "drivers/iio/adc/qti-glink-adc.ko",
         "drivers/input/misc/pm8941-pwrkey.ko",
-        "drivers/input/misc/qcom-hv-haptics.ko",
+    	"drivers/input/misc/qcom-hv-haptics.ko",
+        "drivers/misc/vibrator/aw8697_haptic/haptic_feedback.ko",
+    	"drivers/input/misc/qpnp-power-on.ko",
         "drivers/interconnect/qcom/icc-bcm-voter.ko",
         "drivers/interconnect/qcom/icc-debug.ko",
         "drivers/interconnect/qcom/icc-rpmh.ko",
-        "drivers/interconnect/qcom/qnoc-kera.ko",
         "drivers/interconnect/qcom/qnoc-qos.ko",
         "drivers/interconnect/qcom/qnoc-sun.ko",
         "drivers/interconnect/qcom/qnoc-tuna.ko",
@@ -105,7 +100,6 @@ def define_sun():
         "drivers/irqchip/msm_show_resume_irq.ko",
         "drivers/irqchip/qcom-pdc.ko",
         "drivers/leds/flash/leds-qcom-flash.ko",
-        "drivers/leds/leds-qpnp-vibrator-ldo.ko",
         "drivers/leds/leds-qti-flash.ko",
         "drivers/leds/rgb/leds-qcom-lpg.ko",
         "drivers/mailbox/msm_qmp.ko",
@@ -120,7 +114,6 @@ def define_sun():
         "drivers/pci/controller/pci-msm-drv.ko",
         "drivers/perf/qcom_llcc_pmu.ko",
         "drivers/phy/qualcomm/phy-qcom-ufs.ko",
-        "drivers/phy/qualcomm/phy-qcom-ufs-qmp-v4-niobe.ko",
         "drivers/phy/qualcomm/phy-qcom-ufs-qmp-v4-sun.ko",
         "drivers/phy/qualcomm/phy-qcom-ufs-qrbtc-sdm845.ko",
         "drivers/pinctrl/qcom/pinctrl-kera.ko",
@@ -133,7 +126,12 @@ def define_sun():
         "drivers/power/reset/qcom-pon.ko",
         "drivers/power/reset/qcom-reboot-reason.ko",
         "drivers/power/reset/reboot-mode.ko",
-        "drivers/power/supply/qti_battery_charger.ko",
+        #ifndef OPLUS_FEATURE_CHG_BASIC
+        #"drivers/power/supply/qti_battery_charger.ko",
+        #else
+        "drivers/power/oplus/v2/oplus_chg_v2.ko",
+        "drivers/power/oplus/test-kit/test-kit.ko",
+        #endif
         "drivers/regulator/debug-regulator.ko",
         "drivers/regulator/proxy-consumer.ko",
         "drivers/regulator/qcom-amoled-regulator.ko",
@@ -168,11 +166,8 @@ def define_sun():
         "drivers/soc/qcom/crm-v2.ko",
         "drivers/soc/qcom/dcc_v2.ko",
         "drivers/soc/qcom/dcvs/bwmon.ko",
-        "drivers/soc/qcom/dcvs/c1dcvs_scmi_v2.ko",
-        "drivers/soc/qcom/dcvs/cpufreq_stats_scmi_v2.ko",
         "drivers/soc/qcom/dcvs/cpufreq_stats_scmi_v3.ko",
         "drivers/soc/qcom/dcvs/dcvs_fp.ko",
-        "drivers/soc/qcom/dcvs/dynpf_scmi.ko",
         "drivers/soc/qcom/dcvs/memlat.ko",
         "drivers/soc/qcom/dcvs/qcom-dcvs.ko",
         "drivers/soc/qcom/dcvs/qcom-pmu-lib.ko",
@@ -180,14 +175,13 @@ def define_sun():
         "drivers/soc/qcom/debug_symbol.ko",
         "drivers/soc/qcom/dmesg_dumper.ko",
         "drivers/soc/qcom/eud.ko",
-        "drivers/soc/qcom/fsa4480-i2c.ko",
         "drivers/soc/qcom/gh_tlmm_vm_mem_access.ko",
         "drivers/soc/qcom/gic_intr_routing.ko",
-        "drivers/soc/qcom/glink_probe.ko",
+	"drivers/soc/qcom/glink_probe.ko",
         "drivers/soc/qcom/hung_task_enh.ko",
         "drivers/soc/qcom/llcc-qcom.ko",
-        "drivers/soc/qcom/llcc_heuristics.ko",
         "drivers/soc/qcom/llcc_perfmon.ko",
+        "drivers/soc/qcom/llcc_heuristics.ko",
         "drivers/soc/qcom/mdt_loader.ko",
         "drivers/soc/qcom/mem-hooks.ko",
         "drivers/soc/qcom/mem-offline.ko",
@@ -200,9 +194,9 @@ def define_sun():
         "drivers/soc/qcom/minidump.ko",
         "drivers/soc/qcom/mpam/cpu_mpam.ko",
         "drivers/soc/qcom/mpam/mpam.ko",
+        "drivers/soc/qcom/mpam/platform_mpam.ko",
         "drivers/soc/qcom/mpam/mpam_msc.ko",
         "drivers/soc/qcom/mpam/mpam_msc_slc.ko",
-        "drivers/soc/qcom/mpam/platform_mpam.ko",
         "drivers/soc/qcom/mpam/slc_mpam.ko",
         "drivers/soc/qcom/msm_performance.ko",
         "drivers/soc/qcom/msm_show_epoch.ko",
@@ -214,7 +208,6 @@ def define_sun():
         "drivers/soc/qcom/qcom_aoss.ko",
         "drivers/soc/qcom/qcom_cpu_vendor_hooks.ko",
         "drivers/soc/qcom/qcom_cpucp.ko",
-        "drivers/soc/qcom/qcom_cpuss_sleep_stats.ko",
         "drivers/soc/qcom/qcom_cpuss_sleep_stats_v4.ko",
         "drivers/soc/qcom/qcom_dynamic_ramoops.ko",
         "drivers/soc/qcom/qcom_ice.ko",
@@ -225,7 +218,6 @@ def define_sun():
         "drivers/soc/qcom/qcom_stats.ko",
         "drivers/soc/qcom/qcom_va_minidump.ko",
         "drivers/soc/qcom/qcom_wdt_core.ko",
-        "drivers/soc/qcom/qfprom-sys.ko",
         "drivers/soc/qcom/qmi_helpers.ko",
         "drivers/soc/qcom/qsee_ipc_irq_bridge.ko",
         "drivers/soc/qcom/qti_battery_debug.ko",
@@ -236,12 +228,12 @@ def define_sun():
         "drivers/soc/qcom/smp2p.ko",
         "drivers/soc/qcom/smp2p_sleepstate.ko",
         "drivers/soc/qcom/socinfo.ko",
-        "drivers/soc/qcom/spmi-pmic-err-debug.ko",
         "drivers/soc/qcom/sps/sps_drv.ko",
         "drivers/soc/qcom/sys_pm_vx.ko",
         "drivers/soc/qcom/sysmon_subsystem_stats.ko",
         "drivers/soc/qcom/tmecom/tmecom-intf.ko",
         "drivers/soc/qcom/wcd_usbss_i2c.ko",
+        "drivers/soc/oplus/boot/qcom_watchdog/qcom_enhance_watchdog.ko",
         "drivers/spi/q2spi-geni.ko",
         "drivers/spi/spi-msm-geni.ko",
         "drivers/spmi/spmi-pmic-arb.ko",
@@ -276,7 +268,6 @@ def define_sun():
         "drivers/usb/host/xhci-sideband.ko",
         "drivers/usb/phy/phy-generic.ko",
         "drivers/usb/phy/phy-msm-m31-eusb2.ko",
-        "drivers/usb/phy/phy-msm-snps-eusb2.ko",
         "drivers/usb/phy/phy-msm-ssusb-qmp.ko",
         "drivers/usb/phy/phy-qcom-emu.ko",
         "drivers/usb/redriver/nb7vpq904m.ko",
@@ -296,6 +287,15 @@ def define_sun():
         "drivers/virt/gunyah/gunyah_loader.ko",
         "kernel/msm_sysstats.ko",
         "kernel/sched/walt/sched-walt.ko",
+        "kernel/sched/walt/sched-penalty.ko",
+        "kernel/oplus_cpu/sched/sched_assist/oplus_bsp_sched_assist.ko",
+        "kernel/oplus_cpu/uad/ua_cpu_ioctl.ko",
+        "kernel/oplus_cpu/sched/frame_boost/oplus_bsp_frame_boost.ko",
+        "kernel/oplus_cpu/cpufreq_bouncing/cpufreq_bouncing.ko",
+        "kernel/oplus_cpu/sched/sched_info/oplus_bsp_schedinfo.ko",
+        "kernel/oplus_cpu/sched/task_cpustats/oplus_bsp_task_cpustats.ko",
+        "kernel/oplus_cpu/sched/task_sched/oplus_bsp_task_sched.ko",
+        "kernel/oplus_cpu/oplus_overload/oplus_bsp_task_overload.ko",
         "kernel/trace/qcom_ipc_logging.ko",
         "net/mac80211/mac80211.ko",
         "net/qrtr/qrtr.ko",
@@ -306,14 +306,57 @@ def define_sun():
         "net/wireless/cfg80211.ko",
         "sound/soc/codecs/snd-soc-hdmi-codec.ko",
         "sound/usb/snd-usb-audio-qmi.ko",
+        "drivers/soc/oplus/boot/cmdline_parser/oplusboot.ko",
+        "drivers/soc/oplus/boot/cmdline_parser/oplus_ftm_mode.ko",
+        "drivers/soc/oplus/boot/cmdline_parser/buildvariant.ko",
+        "drivers/soc/oplus/boot/cmdline_parser/cdt_integrity.ko",
+        "drivers/soc/oplus/boot/cmdline_parser/oplus_charger_present.ko",
+        "drivers/soc/oplus/boot/oplus_projectinfo/oplus_bsp_boot_projectinfo.ko",
+        "drivers/soc/oplus/boot/bootmode/boot_mode.ko",
+        "drivers/soc/oplus/boot/bootloader_log/bootloader_log.ko",
+        "drivers/soc/oplus/boot/htb/tango32.ko",
+        "drivers/soc/oplus/device_info/device_info.ko",
+        "drivers/soc/oplus/storage/common/io_metrics/oplus_bsp_storage_io_metrics.ko",
+        "drivers/soc/oplus/dft/common/olc/olc.ko",
+        "drivers/soc/oplus/dft/common/feedback/kernel_fb.ko",
+        "drivers/base/kernelFwUpdate/oplus_bsp_fw_update.ko",
+        "drivers/base/touchpanel_notify/oplus_bsp_tp_notify.ko",
+        "drivers/soc/oplus/storage/common/ufs_oplus_dbg/ufs-oplus-dbg.ko",
+        "drivers/soc/oplus/storage/common/storage_log/oplus_storage_log.ko",
+        "drivers/soc/oplus/storage/common/oplus_uprobe/oplus_uprobe.ko",
+        "drivers/soc/oplus/storage/common/oplus_f2fslog_storage/oplus_f2fslog_storage.ko",
+        "drivers/soc/oplus/storage/common/wq_dynamic_priority/oplus_wq_dynamic_priority.ko",
+        #ifdef CONFIG_OPLUS_FEATURE_MM_FEEDBACK
+        "drivers/soc/oplus/multimedia/oplus_mm_kevent.ko",
+        "drivers/soc/oplus/multimedia/oplus_mm_kevent_fb.ko",
+        #endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+#ifdef OPLUS_TRACKPOINT_REPORT
+        "drivers/soc/oplus/trackpoint/oplus_trackpoint_report.ko",
+#endif /* OPLUS_TRACKPOINT_REPORT */
+        "drivers/soc/oplus/mdmrst/oplus_mdmrst.ko",
+        "drivers/soc/oplus/fpga_notify/oplus_bsp_fpga_notify.ko",
+        "drivers/soc/oplus/power/subsys_sleep_monitor/oplus_subsys_sleep_monitor.ko",
+        "drivers/base/magtransfer/oplus_magcvr_notify.ko",
+        "mm/mm_osvelte/oplus_bsp_mm_osvelte.ko",
+        "kernel/oplus_cpu/waker_identify/oplus_bsp_waker_identify.ko",
     ]
+
+    # Updated for kernel modules that are dynamically loaded based on environment variables
+    # 为根据环境变量而动态加载的内核模块而更新
+    _bsp_drv_inject_in_tree_modules = [
+        # keep sorted
+        # "drivers/power/oplus/debug-kit/debug-kit.ko",
+    ]
+
+    features = _get_oplus_features()
+    key = 'OPLUS_FEATURE_BSP_DRV_INJECT_TEST'
+    if features.get(key, '0').upper() in ['1', 'TRUE']:
+        _sun_in_tree_modules += _bsp_drv_inject_in_tree_modules
 
     _sun_consolidate_in_tree_modules = _sun_in_tree_modules + [
         # keep sorted
-        "drivers/cpuidle/governors/qcom_simple_lpm.ko",
         "drivers/hwtracing/coresight/coresight-etm4x.ko",
         "drivers/misc/lkdtm/lkdtm.ko",
-        "drivers/usb/misc/ehset.ko",
         "drivers/usb/misc/lvstest.ko",
         "kernel/locking/locktorture.ko",
         "kernel/rcu/rcutorture.ko",
@@ -337,7 +380,6 @@ def define_sun():
                 "console=ttyMSM0,115200n8",
                 "qcom_geni_serial.con_enabled=1",
                 "earlycon",
-                "ufshcd_core.uic_cmd_timeout=2000",
             ]
             kernel_vendor_cmdline_extras += [
                 # do not sort
@@ -356,17 +398,7 @@ def define_sun():
             variant = variant,
             in_tree_module_list = mod_list,
             boot_image_opts = boot_image_opts(
-                kernel_vendor_cmdline_extras = kernel_vendor_cmdline_extras,
-                board_kernel_cmdline_extras = board_kernel_cmdline_extras,
-                board_bootconfig_extras = board_bootconfig_extras,
-            ),
-        )
-
-        define_msm_16k_la(
-            msm_target = target_name,
-            variant = variant,
-            in_tree_module_list = mod_list,
-            boot_image_opts = boot_image_opts(
+                earlycon_addr = "qcom_geni,0x00a9c000",
                 kernel_vendor_cmdline_extras = kernel_vendor_cmdline_extras,
                 board_kernel_cmdline_extras = board_kernel_cmdline_extras,
                 board_bootconfig_extras = board_bootconfig_extras,

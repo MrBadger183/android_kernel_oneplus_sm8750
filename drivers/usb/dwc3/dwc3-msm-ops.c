@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -10,17 +10,12 @@
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
 #include <linux/sched.h>
-#include <scsi/scsi_device.h>
 #include <linux/usb/dwc3-msm.h>
 #include <linux/usb/composite.h>
 #include <linux/usb/android_configfs_uevent.h>
 #include "core.h"
 #include "debug-ipc.h"
 #include "gadget.h"
-
-/* USB2 phy configuration quirk control bit */
-#define USB2PHYCFG_SUSPHY	BIT(0)
-#define USB2PHYCFG_ENBLSLPM	BIT(1)
 
 union kprobe_data {
 	struct {
@@ -29,55 +24,6 @@ union kprobe_data {
 	};
 	struct work_struct *data;
 };
-
-static int entry_dwc3_suspend_common(struct kretprobe_instance *ri,
-				struct pt_regs *regs)
-{
-	struct dwc3 *dwc = (struct dwc3 *)regs->regs[0];
-	int flag = 0;
-	union kprobe_data *data = (union kprobe_data *)ri->data;
-
-	if (dwc->current_dr_role == DWC3_GCTL_PRTCAP_HOST) {
-		/* Storing the original values. */
-		if (dwc->dis_u2_susphy_quirk)
-			flag |= USB2PHYCFG_SUSPHY;
-		if (dwc->dis_enblslpm_quirk)
-			flag |= USB2PHYCFG_ENBLSLPM;
-
-		dev_dbg(dwc->dev, "saved SUSPHY=%u & ENABLSLPM=%u\n",
-			dwc->dis_u2_susphy_quirk, dwc->dis_enblslpm_quirk);
-		dwc->dis_u2_susphy_quirk = false;
-		dwc->dis_enblslpm_quirk = false;
-	}
-
-	data->dwc = dwc;
-	data->xi0 = flag;
-	dev_dbg(dwc->dev, "dwc3 suspend common entry\n");
-	return 0;
-}
-
-static int exit_dwc3_suspend_common(struct kretprobe_instance *ri,
-				struct pt_regs *regs)
-{
-	union kprobe_data *data = (union kprobe_data *)ri->data;
-	struct dwc3 *dwc = data->dwc;
-	int flag = data->xi0;
-
-	if (dwc->current_dr_role == DWC3_GCTL_PRTCAP_HOST) {
-		/* Re-store the original quic values. */
-		if (flag & USB2PHYCFG_SUSPHY)
-			dwc->dis_u2_susphy_quirk = true;
-		if (flag & USB2PHYCFG_ENBLSLPM)
-			dwc->dis_enblslpm_quirk = true;
-
-		dev_dbg(dwc->dev, "restored SUSPHY=%u & ENABLSLPM=%u\n",
-			dwc->dis_u2_susphy_quirk, dwc->dis_enblslpm_quirk);
-
-	}
-
-	dev_dbg(dwc->dev, "dwc3 suspend common exit\n");
-	return 0;
-}
 
 static int entry_usb_ep_set_maxpacket_limit(struct kretprobe_instance *ri,
 				struct pt_regs *regs)
@@ -300,17 +246,6 @@ static int exit_android_work(struct kretprobe_instance *ri,
 	return 0;
 }
 
-static int entry_uas_slave_configure(struct kretprobe_instance *ri,
-		struct pt_regs *regs)
-{
-	struct scsi_device *sdev = (struct scsi_device *)regs->regs[0];
-
-	/* this identifies any scsi device as removable in userspace. */
-	sdev->removable = 1;
-
-	return 0;
-}
-
 #define ENTRY_EXIT(name) {\
 	.handler = exit_##name,\
 	.entry_handler = entry_##name,\
@@ -334,13 +269,11 @@ static struct kretprobe dwc3_msm_probes[] = {
 	ENTRY_EXIT(dwc3_gadget_pullup),
 	ENTRY_EXIT(android_work),
 	ENTRY_EXIT(usb_ep_set_maxpacket_limit),
-	ENTRY_EXIT(dwc3_suspend_common),
 	ENTRY(trace_event_raw_event_dwc3_log_request),
 	ENTRY(trace_event_raw_event_dwc3_log_gadget_ep_cmd),
 	ENTRY(trace_event_raw_event_dwc3_log_trb),
 	ENTRY(trace_event_raw_event_dwc3_log_event),
 	ENTRY(trace_event_raw_event_dwc3_log_ep),
-	ENTRY(uas_slave_configure),
 };
 
 

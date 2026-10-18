@@ -788,6 +788,7 @@ static int tpda_probe(struct amba_device *adev, const struct amba_id *id)
 	dev_set_drvdata(dev, drvdata);
 
 	drvdata->atclk = devm_clk_get_optional_enabled(dev, "atclk"); /* optional */
+
 	if (!drvdata->atclk && of_property_read_bool(dev->of_node, "qcom,atclk-dependence")) {
 		dev_err(dev, "atclk is NULL\n");
 		return -EPROBE_DEFER;

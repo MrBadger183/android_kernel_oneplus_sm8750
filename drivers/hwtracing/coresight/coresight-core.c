@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2012, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/build_bug.h>
@@ -190,8 +190,7 @@ coresight_find_out_connection(struct coresight_device *src_dev,
 
 static inline u32 coresight_read_claim_tags(struct coresight_device *csdev)
 {
-	return FIELD_GET(CORESIGHT_CLAIM_MASK,
-			 csdev_access_relaxed_read32(&csdev->access, CORESIGHT_CLAIMCLR));
+	return csdev_access_relaxed_read32(&csdev->access, CORESIGHT_CLAIMCLR);
 }
 
 static inline bool coresight_is_claimed_self_hosted(struct coresight_device *csdev)
@@ -1548,7 +1547,7 @@ static ssize_t sink_name_store(struct device *dev,
 	if (size >= MAX_SINK_NAME)
 		return -EINVAL;
 
-	if (size == 1) {
+	if (size == 0) {
 		csdev->def_sink = NULL;
 		return size;
 	}

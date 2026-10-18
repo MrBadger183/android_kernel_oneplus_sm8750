@@ -7,7 +7,6 @@
 
   Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
 *******************************************************************************/
-/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. */
 
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -215,7 +214,6 @@ static int stmmac_mtl_setup(struct platform_device *pdev,
 
 		queue++;
 	}
-
 	if (queue != plat->rx_queues_to_use) {
 		ret = -EINVAL;
 		dev_err(&pdev->dev, "Not all RX queues were configured\n");
@@ -283,7 +281,6 @@ static int stmmac_mtl_setup(struct platform_device *pdev,
 
 		queue++;
 	}
-
 	if (queue != plat->tx_queues_to_use) {
 		ret = -EINVAL;
 		dev_err(&pdev->dev, "Not all TX queues were configured\n");
@@ -422,7 +419,6 @@ stmmac_probe_config_dt(struct platform_device *pdev, u8 *mac)
 	struct device_node *np = pdev->dev.of_node;
 	struct plat_stmmacenet_data *plat;
 	struct stmmac_dma_cfg *dma_cfg;
-	static int bus_id = -ENODEV;
 	int phy_mode;
 	void *ret;
 	int rc;
@@ -458,14 +454,8 @@ stmmac_probe_config_dt(struct platform_device *pdev, u8 *mac)
 	of_property_read_u32(np, "max-speed", &plat->max_speed);
 
 	plat->bus_id = of_alias_get_id(np, "ethernet");
-	if (plat->bus_id < 0) {
-		if (bus_id < 0)
-			bus_id = of_alias_get_highest_id("ethernet");
-		/* No ethernet alias found, init at -1 so first bus_id is 0 */
-		if (bus_id < 0)
-			bus_id = -1;
-		plat->bus_id = ++bus_id;
-	}
+	if (plat->bus_id < 0)
+		plat->bus_id = 0;
 
 	/* Default to phy auto-detection */
 	plat->phy_addr = -1;

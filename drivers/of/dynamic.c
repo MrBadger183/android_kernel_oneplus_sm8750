@@ -306,20 +306,15 @@ int of_detach_node(struct device_node *np)
 }
 EXPORT_SYMBOL_GPL(of_detach_node);
 
-void __of_prop_free(struct property *prop)
-{
-	kfree(prop->name);
-	kfree(prop->value);
-	kfree(prop);
-}
-
 static void property_list_free(struct property *prop_list)
 {
 	struct property *prop, *next;
 
 	for (prop = prop_list; prop != NULL; prop = next) {
 		next = prop->next;
-		__of_prop_free(prop);
+		kfree(prop->name);
+		kfree(prop->value);
+		kfree(prop);
 	}
 }
 
@@ -432,7 +427,9 @@ struct property *__of_prop_dup(const struct property *prop, gfp_t allocflags)
 	return new;
 
  err_free:
-	__of_prop_free(new);
+	kfree(new->name);
+	kfree(new->value);
+	kfree(new);
 	return NULL;
 }
 
@@ -474,7 +471,9 @@ struct device_node *__of_node_dup(const struct device_node *np,
 			if (!new_pp)
 				goto err_prop;
 			if (__of_add_property(node, new_pp)) {
-				__of_prop_free(new_pp);
+				kfree(new_pp->name);
+				kfree(new_pp->value);
+				kfree(new_pp);
 				goto err_prop;
 			}
 		}
@@ -935,14 +934,12 @@ static int of_changeset_add_prop_helper(struct of_changeset *ocs,
 
 	ret = of_changeset_add_property(ocs, np, new_pp);
 	if (ret) {
-		__of_prop_free(new_pp);
-		return ret;
+		kfree(new_pp->name);
+		kfree(new_pp->value);
+		kfree(new_pp);
 	}
 
-	new_pp->next = np->deadprops;
-	np->deadprops = new_pp;
-
-	return 0;
+	return ret;
 }
 
 /**

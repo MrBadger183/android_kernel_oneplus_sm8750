@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /*
- * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -549,7 +549,8 @@ static struct clk_rcg2 gcc_pcie_0_aux_clk_src = {
 };
 
 static const struct freq_tbl ftbl_gcc_pcie_0_phy_rchng_clk_src[] = {
-	F(100000000, P_GCC_GPLL0_OUT_EVEN, 3, 0, 0),
+	F(19200000, P_BI_TCXO, 1, 0, 0),
+	F(100000000, P_GCC_GPLL0_OUT_MAIN, 6, 0, 0),
 	{ }
 };
 
@@ -572,7 +573,8 @@ static struct clk_rcg2 gcc_pcie_0_phy_rchng_clk_src = {
 		.vdd_class = &vdd_cx,
 		.num_rate_max = VDD_NUM,
 		.rate_max = (unsigned long[VDD_NUM]) {
-			[VDD_LOWER] = 100000000},
+			[VDD_LOWER] = 19200000,
+			[VDD_LOW] = 100000000},
 	},
 };
 
@@ -605,22 +607,6 @@ static struct clk_rcg2 gcc_pdm2_clk_src = {
 };
 
 static const struct freq_tbl ftbl_gcc_qupv3_wrap1_qspi_ref_clk_src[] = {
-	F(7372800, P_GCC_GPLL0_OUT_EVEN, 1, 384, 15625),
-	F(14745600, P_GCC_GPLL0_OUT_EVEN, 1, 768, 15625),
-	F(19200000, P_BI_TCXO, 1, 0, 0),
-	F(29491200, P_GCC_GPLL0_OUT_EVEN, 1, 1536, 15625),
-	F(32000000, P_GCC_GPLL0_OUT_EVEN, 1, 8, 75),
-	F(48000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 25),
-	F(51200000, P_GCC_GPLL0_OUT_EVEN, 1, 64, 375),
-	F(64000000, P_GCC_GPLL0_OUT_EVEN, 1, 16, 75),
-	F(75000000, P_GCC_GPLL0_OUT_EVEN, 4, 0, 0),
-	F(80000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 15),
-	F(96000000, P_GCC_GPLL0_OUT_EVEN, 1, 8, 25),
-	F(100000000, P_GCC_GPLL0_OUT_MAIN, 6, 0, 0),
-	F(102400000, P_GCC_GPLL0_OUT_EVEN, 1, 128, 375),
-	F(112000000, P_GCC_GPLL0_OUT_EVEN, 1, 28, 75),
-	F(117964800, P_GCC_GPLL0_OUT_EVEN, 1, 6144, 15625),
-	F(120000000, P_GCC_GPLL0_OUT_MAIN, 5, 0, 0),
 	F(150000000, P_GCC_GPLL0_OUT_EVEN, 2, 0, 0),
 	F(250000000, P_GCC_GPLL7_OUT_MAIN, 2, 0, 0),
 	{ }
@@ -661,7 +647,6 @@ static const struct freq_tbl ftbl_gcc_qupv3_wrap1_s0_clk_src[] = {
 	F(32000000, P_GCC_GPLL0_OUT_EVEN, 1, 8, 75),
 	F(48000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 25),
 	F(51200000, P_GCC_GPLL0_OUT_EVEN, 1, 64, 375),
-	F(61440000, P_GCC_GPLL0_OUT_EVEN, 1, 128, 625),
 	F(64000000, P_GCC_GPLL0_OUT_EVEN, 1, 16, 75),
 	F(75000000, P_GCC_GPLL0_OUT_EVEN, 4, 0, 0),
 	F(80000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 15),
@@ -736,7 +721,6 @@ static const struct freq_tbl ftbl_gcc_qupv3_wrap1_s3_clk_src[] = {
 	F(32000000, P_GCC_GPLL0_OUT_EVEN, 1, 8, 75),
 	F(48000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 25),
 	F(51200000, P_GCC_GPLL0_OUT_EVEN, 1, 64, 375),
-	F(61440000, P_GCC_GPLL0_OUT_EVEN, 1, 128, 625),
 	F(64000000, P_GCC_GPLL0_OUT_EVEN, 1, 16, 75),
 	F(75000000, P_GCC_GPLL0_OUT_EVEN, 4, 0, 0),
 	F(80000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 15),
@@ -807,7 +791,6 @@ static const struct freq_tbl ftbl_gcc_qupv3_wrap1_s5_clk_src[] = {
 	F(32000000, P_GCC_GPLL0_OUT_EVEN, 1, 8, 75),
 	F(48000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 25),
 	F(51200000, P_GCC_GPLL0_OUT_EVEN, 1, 64, 375),
-	F(61440000, P_GCC_GPLL0_OUT_EVEN, 1, 128, 625),
 	F(64000000, P_GCC_GPLL0_OUT_EVEN, 1, 16, 75),
 	F(75000000, P_GCC_GPLL0_OUT_EVEN, 4, 0, 0),
 	F(80000000, P_GCC_GPLL0_OUT_EVEN, 1, 4, 15),
@@ -1149,7 +1132,6 @@ static struct clk_rcg2 gcc_qupv3_wrap2_s7_clk_src = {
 static const struct freq_tbl ftbl_gcc_sdcc2_apps_clk_src[] = {
 	F(400000, P_BI_TCXO, 12, 1, 4),
 	F(25000000, P_GCC_GPLL0_OUT_EVEN, 12, 0, 0),
-	F(37500000, P_GCC_GPLL0_OUT_EVEN, 8, 0, 0),
 	F(50000000, P_GCC_GPLL0_OUT_EVEN, 6, 0, 0),
 	F(100000000, P_GCC_GPLL0_OUT_EVEN, 3, 0, 0),
 	F(202000000, P_GCC_GPLL9_OUT_MAIN, 4, 0, 0),
@@ -1169,7 +1151,7 @@ static struct clk_rcg2 gcc_sdcc2_apps_clk_src = {
 		.parent_data = gcc_parent_data_8,
 		.num_parents = ARRAY_SIZE(gcc_parent_data_8),
 		.flags = CLK_SET_RATE_PARENT,
-		.ops = &clk_rcg2_floor_ops,
+		.ops = &clk_rcg2_ops,
 	},
 	.clkr.vdd_data = {
 		.vdd_classes = gcc_tuna_regulators,
@@ -1753,11 +1735,10 @@ static struct clk_branch gcc_gpu_gemnoc_gfx_clk = {
 };
 
 static struct clk_branch gcc_gpu_gpll0_cph_clk_src = {
-	.halt_reg = 0x71150,
-	.halt_check = BRANCH_HALT_ENABLE_VOTED,
+	.halt_check = BRANCH_HALT_DELAY,
 	.clkr = {
-		.enable_reg = 0x71150,
-		.enable_mask = BIT(0),
+		.enable_reg = 0x52000,
+		.enable_mask = BIT(15),
 		.hw.init = &(const struct clk_init_data) {
 			.name = "gcc_gpu_gpll0_cph_clk_src",
 			.parent_hws = (const struct clk_hw*[]) {
@@ -1771,11 +1752,10 @@ static struct clk_branch gcc_gpu_gpll0_cph_clk_src = {
 };
 
 static struct clk_branch gcc_gpu_gpll0_div_cph_clk_src = {
-	.halt_reg = 0x71154,
-	.halt_check = BRANCH_HALT_ENABLE_VOTED,
+	.halt_check = BRANCH_HALT_DELAY,
 	.clkr = {
-		.enable_reg = 0x71154,
-		.enable_mask = BIT(0),
+		.enable_reg = 0x52000,
+		.enable_mask = BIT(16),
 		.hw.init = &(const struct clk_init_data) {
 			.name = "gcc_gpu_gpll0_div_cph_clk_src",
 			.parent_hws = (const struct clk_hw*[]) {
@@ -1783,32 +1763,6 @@ static struct clk_branch gcc_gpu_gpll0_div_cph_clk_src = {
 			},
 			.num_parents = 1,
 			.flags = CLK_SET_RATE_PARENT,
-			.ops = &clk_branch2_ops,
-		},
-	},
-};
-
-static struct clk_branch gcc_gpu_smmu_vote_clk = {
-	.halt_reg = 0x7d000,
-	.halt_check = BRANCH_HALT_VOTED,
-	.clkr = {
-		.enable_reg = 0x7d000,
-		.enable_mask = BIT(0),
-		.hw.init = &(const struct clk_init_data) {
-			.name = "gcc_gpu_smmu_vote_clk",
-			.ops = &clk_branch2_ops,
-		},
-	},
-};
-
-static struct clk_branch gcc_mmu_tcu_vote_clk = {
-	.halt_reg = 0x7d02c,
-	.halt_check = BRANCH_HALT_VOTED,
-	.clkr = {
-		.enable_reg = 0x7d02c,
-		.enable_mask = BIT(0),
-		.hw.init = &(const struct clk_init_data) {
-			.name = "gcc_mmu_tcu_vote_clk",
 			.ops = &clk_branch2_ops,
 		},
 	},
@@ -3054,8 +3008,6 @@ static struct clk_regmap *gcc_tuna_clocks[] = {
 	[GCC_GPU_GEMNOC_GFX_CLK] = &gcc_gpu_gemnoc_gfx_clk.clkr,
 	[GCC_GPU_GPLL0_CPH_CLK_SRC] = &gcc_gpu_gpll0_cph_clk_src.clkr,
 	[GCC_GPU_GPLL0_DIV_CPH_CLK_SRC] = &gcc_gpu_gpll0_div_cph_clk_src.clkr,
-	[GCC_GPU_SMMU_VOTE_CLK] = &gcc_gpu_smmu_vote_clk.clkr,
-	[GCC_MMU_TCU_VOTE_CLK] = &gcc_mmu_tcu_vote_clk.clkr,
 	[GCC_PCIE_0_AUX_CLK] = &gcc_pcie_0_aux_clk.clkr,
 	[GCC_PCIE_0_AUX_CLK_SRC] = &gcc_pcie_0_aux_clk_src.clkr,
 	[GCC_PCIE_0_CFG_AHB_CLK] = &gcc_pcie_0_cfg_ahb_clk.clkr,
@@ -3169,8 +3121,6 @@ static struct clk_regmap *gcc_tuna_clocks[] = {
 static const struct qcom_reset_map gcc_tuna_resets[] = {
 	[GCC_CAMERA_BCR] = { 0x26000 },
 	[GCC_DISPLAY_BCR] = { 0x27000 },
-	[GCC_EVA_AXI0_CLK_ARES] = { 0x9f008, 2 },
-	[GCC_EVA_AXI0C_CLK_ARES] = { 0x9f018, 2 },
 	[GCC_EVA_BCR] = { 0x9f000 },
 	[GCC_GPU_BCR] = { 0x71000 },
 	[GCC_PCIE_0_BCR] = { 0x6b000 },

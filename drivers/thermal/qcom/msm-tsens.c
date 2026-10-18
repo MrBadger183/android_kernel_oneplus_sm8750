@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/err.h>
@@ -45,13 +45,6 @@ static int tsens_set_trip_temp(struct thermal_zone_device *tz, int low_temp, int
 
 	return 0;
 }
-
-/* WA to add writable trip_temp_*_hyst sysfs node till core has proper fix */
-static int tsens_set_trip_hyst(
-		struct thermal_zone_device *tz, int trip, int hysteresis)
-{
-	return 0;
-};
 
 static int tsens_tz_change_mode(struct thermal_zone_device *tz, enum thermal_device_mode mode)
 {
@@ -116,9 +109,6 @@ static const struct of_device_id tsens_table[] = {
 	{	.compatible = "qcom,tsens26xx",
 		.data = &data_tsens26xx,
 	},
-	{       .compatible = "qcom,sm6150-tsens",
-		.data = &data_tsens23xx,
-	},
 	{}
 };
 MODULE_DEVICE_TABLE(of, tsens_table);
@@ -126,7 +116,6 @@ MODULE_DEVICE_TABLE(of, tsens_table);
 static struct thermal_zone_device_ops tsens_tm_thermal_zone_ops = {
 	.get_temp = tsens_get_temp,
 	.set_trips = tsens_set_trip_temp,
-	.set_trip_hyst = tsens_set_trip_hyst,
 	.change_mode = tsens_tz_change_mode,
 };
 

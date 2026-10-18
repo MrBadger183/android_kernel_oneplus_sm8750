@@ -351,13 +351,6 @@ static int io_setup_async_addr(struct io_kiocb *req,
 	return -EAGAIN;
 }
 
-static void io_net_kbuf_recyle(struct io_kiocb *req)
-{
-	req->flags |= REQ_F_PARTIAL_IO;
-	if (req->flags & REQ_F_BUFFER_RING)
-		io_kbuf_recycle_ring(req);
-}
-
 int io_sendmsg_prep_async(struct io_kiocb *req)
 {
 	int ret;
@@ -449,7 +442,7 @@ int io_sendmsg(struct io_kiocb *req, unsigned int issue_flags)
 			kmsg->msg.msg_controllen = 0;
 			kmsg->msg.msg_control = NULL;
 			sr->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return io_setup_async_msg(req, kmsg, issue_flags);
 		}
 		if (ret == -ERESTARTSYS)
@@ -528,7 +521,7 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 			sr->len -= ret;
 			sr->buf += ret;
 			sr->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return io_setup_async_addr(req, &__address, issue_flags);
 		}
 		if (ret == -ERESTARTSYS)
@@ -898,7 +891,7 @@ retry_multishot:
 		}
 		if (ret > 0 && io_net_retry(sock, flags)) {
 			sr->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return io_setup_async_msg(req, kmsg, issue_flags);
 		}
 		if (ret == -ERESTARTSYS)
@@ -998,7 +991,7 @@ retry_multishot:
 			sr->len -= ret;
 			sr->buf += ret;
 			sr->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return -EAGAIN;
 		}
 		if (ret == -ERESTARTSYS)
@@ -1242,7 +1235,7 @@ int io_send_zc(struct io_kiocb *req, unsigned int issue_flags)
 			zc->len -= ret;
 			zc->buf += ret;
 			zc->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return io_setup_async_addr(req, &__address, issue_flags);
 		}
 		if (ret == -ERESTARTSYS)
@@ -1313,7 +1306,7 @@ int io_sendmsg_zc(struct io_kiocb *req, unsigned int issue_flags)
 
 		if (ret > 0 && io_net_retry(sock, flags)) {
 			sr->done_io += ret;
-			io_net_kbuf_recyle(req);
+			req->flags |= REQ_F_PARTIAL_IO;
 			return io_setup_async_msg(req, kmsg, issue_flags);
 		}
 		if (ret == -ERESTARTSYS)
@@ -1544,11 +1537,9 @@ int io_connect(struct io_kiocb *req, unsigned int issue_flags)
 		io = &__io;
 	}
 
-	if (connect->in_progress) {
-		struct poll_table_struct pt = { ._key = EPOLLERR };
-
-		if (vfs_poll(req->file, &pt) & EPOLLERR)
-			goto get_sock_err;
+	if (unlikely(req->flags & REQ_F_FAIL)) {
+		ret = -ECONNRESET;
+		goto out;
 	}
 
 	file_flags = force_nonblock ? O_NONBLOCK : 0;
@@ -1580,10 +1571,8 @@ int io_connect(struct io_kiocb *req, unsigned int issue_flags)
 		 * which means the previous result is good. For both of these,
 		 * grab the sock_error() and use that for the completion.
 		 */
-		if (ret == -EBADFD || ret == -EISCONN) {
-get_sock_err:
+		if (ret == -EBADFD || ret == -EISCONN)
 			ret = sock_error(sock_from_file(req->file)->sk);
-		}
 	}
 	if (ret == -ERESTARTSYS)
 		ret = -EINTR;

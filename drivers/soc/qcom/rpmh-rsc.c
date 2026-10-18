@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s " fmt, KBUILD_MODNAME
@@ -731,17 +731,13 @@ static int find_free_tcs(struct tcs_group *tcs)
 	unsigned long i;
 	unsigned long max = tcs->offset + tcs->num_tcs;
 	int timeout = 100;
-	u32 sts;
 
 	i = find_next_zero_bit(drv->tcs_in_use, max, tcs->offset);
 	if (i >= max)
 		return -EBUSY;
 
-	sts = read_tcs_reg(drv, drv->regs[RSC_DRV_STATUS], i);
-
 	while (timeout) {
-		sts = read_tcs_reg(drv, drv->regs[RSC_DRV_STATUS], i);
-		if (sts)
+		if (read_tcs_reg(drv, drv->regs[RSC_DRV_STATUS], i))
 			break;
 		timeout--;
 		udelay(1);
@@ -934,9 +930,7 @@ int rpmh_rsc_write_ctrl_data(struct rsc_drv *drv, const struct tcs_request *msg,
 	int ret;
 
 	if (!msg->num_cmds) {
-#if IS_ENABLED(CONFIG_IPC_LOGGING)
 		ipc_log_string(drv->ipc_log_ctx, "Empty num_cmds, returning");
-#endif
 		return 0;
 	}
 

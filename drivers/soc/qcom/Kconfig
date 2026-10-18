@@ -211,15 +211,6 @@ config QCOM_MDT_LOADER
 	tristate
 	select QCOM_SCM
 
-config MSM_POWER_STATE
-	tristate "Power State driver support for Deep Sleep and Hibernate"
-	help
-	  This option enables Power State Driver which is the kernel component
-	  for supporting deep sleep and hibernate. Create a power_state device
-	  node for user space communication. User space client can open device
-	  node for communication required for handling deep sleep and hibernate
-	  modes.
-
 config QCOM_OCMEM
 	tristate "Qualcomm On Chip Memory (OCMEM) driver"
 	depends on ARCH_QCOM
@@ -292,14 +283,6 @@ config QCOM_QFPROM_SYS
            values are exported as sysfs entries.
 
            Say y here to enable QFPROM SYS support.
-
-config MSM_CORE_HANG_DETECT
-        tristate "MSM Core Hang Detection Support"
-        help
-          This enables the core hang detection module. It causes SoC
-          reset on core hang detection and collects the core context
-          for hang. By using sysfs entries core hang detection can be
-          enabled or disabled dynamically.
 
 config QCOM_RAMP_CTRL
 	tristate "Qualcomm Ramp Controller driver"
@@ -375,14 +358,6 @@ config QCOM_RPMPD
 	  performance states. The driver communicates a performance state
 	  value to RPM which then translates it into corresponding voltage
 	  for the voltage rail.
-
-config QCOM_RUN_QUEUE_STATS
-	tristate "Enable collection and exporting of QTI Run Queue stats to userspace"
-	help
-	  This option enables the driver to periodically collecting the statistics
-	  of kernel run queue information and calculate the load of the system.
-	  This information is exported to usespace via sysfs entries and userspace
-	  algorithms uses info and decide when to turn on/off the cpu cores.
 
 config QCOM_SMEM
 	tristate "Qualcomm Shared Memory Manager (SMEM)"
@@ -550,15 +525,6 @@ config QCOM_WDT_CORE
 	   watchdog module must be loaded along with this for watchdog
 	   functionality.
 
-config QCOM_CX_IPEAK
-	tristate "Common driver to handle Cx iPeak limitation"
-	help
-	  Cx ipeak HW module is used to limit the current drawn by various
-	  subsystem blocks on Cx power rail. Each client needs to set their
-	  bit in tcsr register if it is going to cross its own threshold.
-	  If all clients are going to cross their thresholds then Cx ipeak
-	  hw module will raise an interrupt to cDSP block to throttle cDSP fmax.
-
 config QCOM_SOC_WATCHDOG
 	tristate "Qualcomm Technologies, Inc. Soc Watchdog"
 	depends on QCOM_WDT_CORE
@@ -601,7 +567,7 @@ config QCOM_WATCHDOG_BARK_TIME
 	depends on QCOM_WDT_CORE
 	int "Qualcomm Technologies, Inc. Watchdog bark time in ms"
 	default 11000
-	range 11000 11000
+	range 11000 22000
 	help
 	  The amount of time, in milliseconds, that should elapse after
 	  a watchdog timer reset before a bark interrupt is sent from the
@@ -712,15 +678,6 @@ config QCOM_ADSP_SLEEPMON
 	   activity notifications from these userspace clients, the driver
 	   detects and logs sleep violations from ADSP subsystem. The driver
 	   uses master stats from ADSP subsystem stored in SMEM.
-
-config USB_BAM
-        tristate "USB BAM Driver"
-	depends on SPS && USB_GADGET
-        help
-          Enabling this option adds USB BAM Driver.
-          USB BAM driver was added to supports Smart Peripheral Subsystem
-          Peripheral-to-Peripheral transfers between the USB and other
-          peripheral.
 
 config QCOM_CPU_VENDOR_HOOKS
         tristate "QTI Vendor Hooks Support"
@@ -949,16 +906,6 @@ config QCOM_MINIDUMP_PANIC_CPUFREQ_INFO
 	  for each cluster.
 	  Say N if unsure or cpufreq vendor hooks undefined.
 
-config QCOM_MINIDUMP_PANIC_KTASK_STACK
-	bool "QCOM Minidump Panic dumps Kernel Task Stack"
-	depends on QCOM_MINIDUMP_PANIC_DUMP && DETECT_HUNG_TASK
-	default y
-	help
-	  This enables kernel task call stack dump in minidump
-	  table, on panic. Only the kernel tasks that in
-	  TASK_UNINTERRUPTIBLE (D) state will be dumped, also
-	  the time it stuck will be printed.
-
 config QCOM_MINIDUMP_PSTORE
 	bool "QCOM Minidump Pstore dumps Support"
 	depends on ARM64 && QCOM_MINIDUMP
@@ -976,6 +923,18 @@ config MINIDUMP_MAX_ENTRIES
 	help
 	  This defines maximum number of entries to be allocated for application
 	  subsytem in Minidump table.
+
+config OPLUS_POWERINFO_RPMH
+	bool "powerinfo rpmh config"
+	default n
+	help
+	  Select this config to enable powerinfo rpmh
+
+config OPLUS_POWERINFO_STANDBY_DEBUG
+	bool "powerinfo standby config"
+	default n
+	help
+	  Select this config to enable powerinfo standby debug
 
 config QCOM_HUNG_TASK_ENH
         tristate "QTI Hung Task Enhancement"
@@ -1080,14 +1039,6 @@ config QCOM_PANEL_EVENT_NOTIFIER
 	  can use these notifications for power saving or align its operations
 	  with display panel power state.
 
-config QCOM_SPMI_PMIC_ERR_DBG
-	tristate "Qualcomm SPMI protocol error IRQ handler"
-	depends on QCOM_SCM
-	help
-	  Enabling this option adds SPMI PMIC error debug driver.
-	  It configures SPMI protocol IRQ to be triggered during SPMI HW error
-	  conditions, to collect and dump several PMIC arbiter registers and
-	  optionally some more debug data from test bus registers.
 
 config QTI_PMIC_GLINK
 	tristate "Enable support for PMIC GLINK"
@@ -1243,23 +1194,5 @@ config QTI_DMOF_SCMI
 	  via sysfs interface and relays them to CPUCP via SCMI communication.
 
 	  It is intended to be used by clients familiar with
-	  Memcpy Optimization Feature on Qualcomm Technologies, Inc. SOCs.
-
-config QCOM_PMIC_ECID
-	tristate "QCOM PMIC ECID driver"
-	help
-	  This driver provides information on PMIC chipset ECID (Exclusive Chip Identifier).
-	  This driver reads the chipset ECID details from the respective address and
-	  exposes the details via sysfs interface.
-	  This helps in identification of PMIC part information.
-
-config QTI_HW_KEY_MANAGER_V1
-	tristate "Enable QTI Hardware Key Manager v1 for storage encryption"
-	default n
-	help
-	 Say 'Y' to enable the hardware key manager v1 driver used to operate
-	 and access key manager hardware block. This is used to interface with
-	 HWKM hardware to perform key operations from the kernel which will
-	 be used for storage encryption.
-
+	  Memcpy Optimization Feature on Qualcomm SOCs.
 endmenu

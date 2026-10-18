@@ -1066,8 +1066,7 @@ void dce110_edp_backlight_control(
 			DC_LOG_DC("edp_receiver_ready_T9 skipped\n");
 	}
 
-	if (!enable) {
-		/*follow oem panel config's requirement*/
+	if (!enable && link->dpcd_sink_ext_caps.bits.oled) {
 		pre_T11_delay += link->panel_config.pps.extra_pre_t11_ms;
 		msleep(pre_T11_delay);
 	}

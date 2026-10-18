@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (c) 2012, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Description: CoreSight Trace Memory Controller driver
  */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/types.h>
-#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/idr.h>
 #include <linux/io.h>
@@ -39,23 +39,6 @@ static LIST_HEAD(delay_probe_list);
 static LIST_HEAD(cpu_pm_list);
 static enum cpuhp_state hp_online;
 static DEFINE_SPINLOCK(delay_lock);
-static u32 timeout;
-
-static void tmc_flush_wait_time(struct csdev_access *csa, u32 offset, int pos, int val)
-{
-	int i;
-
-	for (i = timeout; i > 0; i--) {
-		if (i - 1)
-			udelay(1);
-	}
-}
-
-static int tmc_wait_status(struct csdev_access *csa, u32 offset, int pos, int val)
-{
-	return coresight_timeout_action(csa, offset, pos, val,
-			tmc_flush_wait_time);
-}
 
 int tmc_wait_for_tmcready(struct tmc_drvdata *drvdata)
 {
@@ -63,7 +46,7 @@ int tmc_wait_for_tmcready(struct tmc_drvdata *drvdata)
 	struct csdev_access *csa = &csdev->access;
 
 	/* Ensure formatter, unformatter and hardware fifo are empty */
-	if (tmc_wait_status(csa, TMC_STS, TMC_STS_TMCREADY_BIT, 1)) {
+	if (coresight_timeout(csa, TMC_STS, TMC_STS_TMCREADY_BIT, 1)) {
 		dev_err(&csdev->dev,
 			"timeout while waiting for TMC to be Ready\n");
 		return -EBUSY;
@@ -83,7 +66,7 @@ void tmc_flush_and_stop(struct tmc_drvdata *drvdata)
 	ffcr |= BIT(TMC_FFCR_FLUSHMAN_BIT);
 	writel_relaxed(ffcr, drvdata->base + TMC_FFCR);
 	/* Ensure flush completes */
-	if (tmc_wait_status(csa, TMC_FFCR, TMC_FFCR_FLUSHMAN_BIT, 0)) {
+	if (coresight_timeout(csa, TMC_FFCR, TMC_FFCR_FLUSHMAN_BIT, 0)) {
 		dev_err(&csdev->dev,
 		"timeout while waiting for completion of Manual Flush\n");
 	}
@@ -540,26 +523,38 @@ static ssize_t stop_on_flush_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(stop_on_flush);
 
-static ssize_t flush_time_show(struct device *dev,
-			     struct device_attribute *attr, char *buf)
+static ssize_t mgmt_ctl_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	return scnprintf(buf, PAGE_SIZE, "%d\n", timeout);
+	u32 val;
+	struct tmc_drvdata *drvdata = dev_get_drvdata(dev->parent);
+	struct coresight_device *csdev = drvdata->csdev;
+
+	pm_runtime_resume_and_get(csdev->dev.parent);
+	val = csdev_access_relaxed_read32(&csdev->access, 0x20);
+	pm_runtime_put_sync(csdev->dev.parent);
+	return scnprintf(buf, PAGE_SIZE, "%x\n", val);
 }
 
-static ssize_t flush_time_store(struct device *dev,
-			      struct device_attribute *attr,
-			      const char *buf, size_t size)
+static ssize_t mgmt_ctl_store(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t size)
 {
 	unsigned long val;
+	struct tmc_drvdata *drvdata = dev_get_drvdata(dev->parent);
+	struct coresight_device *csdev = drvdata->csdev;
 
-	if (kstrtoul(buf, 0, &val))
+	if ((kstrtoul(buf, 0, &val)) || (val & ~1UL))
 		return -EINVAL;
 
-	timeout = val;
+	pm_runtime_resume_and_get(csdev->dev.parent);
+	csdev_access_relaxed_write32(&csdev->access, (u32)val, 0x20);
+	pm_runtime_put_sync(csdev->dev.parent);
 
 	return size;
 }
-static DEVICE_ATTR_RW(flush_time);
+
+static DEVICE_ATTR_RW(mgmt_ctl);
 
 static struct attribute *coresight_tmc_etr_attrs[] = {
 	&dev_attr_trigger_cntr.attr,
@@ -567,14 +562,13 @@ static struct attribute *coresight_tmc_etr_attrs[] = {
 	&dev_attr_block_size.attr,
 	&dev_attr_out_mode.attr,
 	&dev_attr_stop_on_flush.attr,
-	&dev_attr_flush_time.attr,
 	NULL,
 };
 
 static struct attribute *coresight_tmc_etf_attrs[] = {
 	&dev_attr_trigger_cntr.attr,
 	&dev_attr_stop_on_flush.attr,
-	&dev_attr_flush_time.attr,
+	&dev_attr_mgmt_ctl.attr,
 	NULL,
 };
 
@@ -713,7 +707,6 @@ static int tmc_add_coresight_dev(struct amba_device *adev, const struct amba_id 
 		dev_err(dev, "atclk is NULL\n");
 		return -EPROBE_DEFER;
 	}
-
 	if (!IS_ERR(drvdata->atclk)) {
 		ret = clk_prepare_enable(drvdata->atclk);
 		if (ret)
@@ -1092,7 +1085,7 @@ static void tmc_remove(struct amba_device *adev)
 		return;
 	}
 	if (drvdata->pm_config.pm_enable)
-		list_del(&drvdata->link);
+		list_del(&drvdata->delayed->link);
 	spin_unlock(&delay_lock);
 
 	if (!drvdata->csdev)

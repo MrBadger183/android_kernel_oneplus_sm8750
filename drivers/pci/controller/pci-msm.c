@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. */
+/* Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
 #include <dt-bindings/interconnect/qcom,icc.h>
@@ -594,7 +594,7 @@ static const char * const
 /* gpio info structure */
 struct msm_pcie_gpio_info_t {
 	char *name;
-	int32_t num;
+	uint32_t num;
 	bool out;
 	uint32_t on;
 	uint32_t init;
@@ -1075,6 +1075,7 @@ struct msm_pcie_dev_t {
 
 	uint32_t wake_n;
 	uint32_t vreg_n;
+	uint32_t gpio_n;
 	uint32_t parf_deemph;
 	uint32_t parf_swing;
 
@@ -1241,7 +1242,6 @@ struct msm_pcie_dev_t {
 	u32 clkreq_gpio;
 
 	bool fmd_enable;
-	bool no_client_based_bw_voting;
 };
 
 struct msm_root_dev_t {
@@ -1297,9 +1297,9 @@ static struct msm_pcie_vreg_info_t msm_pcie_vreg_info[MSM_PCIE_MAX_VREG] = {
 
 /* GPIOs */
 static struct msm_pcie_gpio_info_t msm_pcie_gpio_info[MSM_PCIE_MAX_GPIO] = {
-	{"perst-gpio", -EINVAL, 1, 0, 0, 1},
-	{"wake-gpio", -EINVAL, 0, 0, 0, 0},
-	{"qcom,ep-gpio", -EINVAL, 1, 1, 0, 0}
+	{"perst-gpio", 0, 1, 0, 0, 1},
+	{"wake-gpio", 0, 0, 0, 0, 0},
+	{"qcom,ep-gpio", 0, 1, 1, 0, 0}
 };
 
 /* resets */
@@ -2160,8 +2160,7 @@ static void msm_pcie_show_status(struct msm_pcie_dev_t *dev)
 		PCIE_DBG_FS(dev, "PCIe L1ss sleep is supported using %s\n",
 							dev->drv_name);
 	else
-		PCIE_DBG_FS(dev, "PCIe L1ss sleep is not supported for RC%d\n",
-				dev->rc_idx);
+		PCIE_DBG_FS(dev, "PCIe L1ss sleep is not supported\n");
 }
 
 static void msm_pcie_access_reg(struct msm_pcie_dev_t *dev, bool wr)
@@ -3907,7 +3906,7 @@ static void __maybe_unused
 }
 
 /* Read the curr perf ol value from the cesta register */
-static const char *const __maybe_unused msm_pcie_cesta_curr_perf_ol(struct msm_pcie_dev_t *dev)
+static const char *const msm_pcie_cesta_curr_perf_ol(struct msm_pcie_dev_t *dev)
 {
 	u32 ret;
 	int res;
@@ -4061,10 +4060,11 @@ static int msm_pcie_gpio_init(struct msm_pcie_dev_t *dev)
 	struct msm_pcie_gpio_info_t *info;
 
 	PCIE_DBG(dev, "RC%d\n", dev->rc_idx);
-	for (i = 0; i < MSM_PCIE_MAX_GPIO; i++) {
+
+	for (i = 0; i < dev->gpio_n; i++) {
 		info = &dev->gpio[i];
 
-		if (info->num < 0)
+		if (!info->num)
 			continue;
 
 		rc = gpio_request(info->num, info->name);
@@ -4089,8 +4089,7 @@ static int msm_pcie_gpio_init(struct msm_pcie_dev_t *dev)
 
 	if (rc)
 		while (i--)
-			if (dev->gpio[i].num >= 0)
-				gpio_free(dev->gpio[i].num);
+			gpio_free(dev->gpio[i].num);
 
 	return rc;
 }
@@ -4101,10 +4100,8 @@ static void msm_pcie_gpio_deinit(struct msm_pcie_dev_t *dev)
 
 	PCIE_DBG(dev, "RC%d\n", dev->rc_idx);
 
-	for (i = 0; i < MSM_PCIE_MAX_GPIO; i++) {
-		if (dev->gpio[i].num >= 0)
-			gpio_free(dev->gpio[i].num);
-	}
+	for (i = 0; i < dev->gpio_n; i++)
+		gpio_free(dev->gpio[i].num);
 }
 
 static int msm_pcie_vreg_init(struct msm_pcie_dev_t *dev)
@@ -4439,10 +4436,9 @@ static int msm_pcie_core_phy_reset(struct msm_pcie_dev_t *dev)
 	return rc;
 }
 
-static int msm_pcie_icc_vote(struct msm_pcie_dev_t *dev, u8 speed,
-						u8 width, bool drv_state)
+static int msm_pcie_icc_vote(struct msm_pcie_dev_t *dev, u32 icc_ab,
+						u32 icc_ib, bool drv_state)
 {
-	u32 bw;
 	int rc = 0;
 	u32 icc_tags;
 
@@ -4459,42 +4455,10 @@ static int msm_pcie_icc_vote(struct msm_pcie_dev_t *dev, u8 speed,
 		if (dev->pcie_sm)
 			icc_set_tag(dev->icc_path, icc_tags);
 
-		switch (speed) {
-		case 1:
-			bw = 250000; /* avg bw / AB: 2.5 GBps, peak bw / IB: no vote */
-			break;
-		case 2:
-			bw = 500000; /* avg bw / AB: 5 GBps, peak bw / IB: no vote */
-			break;
-		case 3:
-			bw = 1000000; /* avg bw / AB: 8 GBps, peak bw / IB: no vote */
-			break;
-		case 4:
-			bw = 2000000; /* avg bw / AB: 16 GBps, peak bw / IB: no vote */
-			break;
-		case 5:
-			bw = 4000000; /* avg bw / AB: 32 GBps, peak bw / IB: no vote */
-			break;
-		default:
-			bw = 0;
-			break;
-		}
+		PCIE_DBG(dev, "PCIe: RC%d: putting ICC vote ab = %d ib = %d\n",
+			dev->rc_idx, icc_ab, icc_ib);
 
-		if (speed == 0) {
-			/* Speed == 0 implies to vote for '0' bandwidth. */
-			rc = icc_set_bw(dev->icc_path, 0, 0);
-		} else {
-			/*
-			 * If there is no icc voting from the client driver then vote for icc
-			 * bandwidth is based up on link speed and width or vote for average
-			 * icc bandwidth.
-			 */
-			if (dev->no_client_based_bw_voting)
-				rc = icc_set_bw(dev->icc_path, width * bw, 0);
-			else
-				rc = icc_set_bw(dev->icc_path, ICC_AVG_BW, ICC_PEAK_BW);
-		}
-
+		rc = icc_set_bw(dev->icc_path, icc_ab, icc_ib);
 		if (rc)
 			PCIE_ERR(dev,
 				"PCIe: RC%d: failed to put the ICC vote %d.\n",
@@ -4532,8 +4496,7 @@ static int msm_pcie_clk_init(struct msm_pcie_dev_t *dev)
 	if (dev->pipe_clk_mux && dev->pipe_clk_ext_src)
 		clk_set_parent(dev->pipe_clk_mux, dev->pipe_clk_ext_src);
 
-	/* vote with GEN1x1 before link up */
-	rc = msm_pcie_icc_vote(dev, GEN1_SPEED, LINK_WIDTH_X1, false);
+	rc = msm_pcie_icc_vote(dev, ICC_AVG_BW, ICC_PEAK_BW, false);
 	if (rc)
 		return rc;
 
@@ -4792,93 +4755,29 @@ static int pcie_phy_init(struct msm_pcie_dev_t *dev)
 	return 0;
 }
 
-static u16 msm_pci_find_ext_capability(struct msm_pcie_dev_t *pci, u8 cap)
-{
-	int pos = PCI_CFG_SPACE_SIZE;
-	u32 header;
-	int ttl;
-
-	/* minimum 8 bytes per capability */
-	ttl = (PCI_CFG_SPACE_EXP_SIZE - PCI_CFG_SPACE_SIZE) / 8;
-
-	header = readl_relaxed(pci->dm_core + pos);
-	/*
-	 * If we have no capabilities, this is indicated by cap ID,
-	 * cap version and next pointer all being 0.
-	 */
-	if (header == 0)
-		return 0;
-
-	while (ttl-- > 0) {
-		if (PCI_EXT_CAP_ID(header) == cap && pos != 0)
-			return pos;
-
-		pos = PCI_EXT_CAP_NEXT(header);
-		if (pos < PCI_CFG_SPACE_SIZE)
-			break;
-
-		header = readl_relaxed(pci->dm_core + pos);
-	}
-
-	return 0;
-}
-
 static void msm_pcie_config_core_preset(struct msm_pcie_dev_t *pcie_dev)
 {
-	u32 supported_link_speed, supported_link_width;
-	u16 cap_id_offset, offset;
-	u32 val;
-	int i;
-
-	val = readl_relaxed(pcie_dev->dm_core + PCIE20_CAP + PCI_EXP_LNKCAP);
-
-	supported_link_speed = val & PCI_EXP_LNKCAP_SLS;
-	supported_link_width =  (val & PCI_EXP_LNKCAP_MLW) >> PCI_EXP_LNKSTA_NLW_SHIFT;
+	u32 supported_link_speed =
+		readl_relaxed(pcie_dev->dm_core + PCIE20_CAP + PCI_EXP_LNKCAP) &
+		PCI_EXP_LNKCAP_SLS;
 
 	/* enable write access to RO register */
-	msm_pcie_write_mask(pcie_dev->dm_core + PCIE_GEN3_MISC_CONTROL, 0, BIT(0));
+	msm_pcie_write_mask(pcie_dev->dm_core + PCIE_GEN3_MISC_CONTROL, 0,
+				BIT(0));
 
 	/* Gen3 */
-	if (supported_link_speed >= PCI_EXP_LNKCAP_SLS_8_0GB) {
-		cap_id_offset = msm_pci_find_ext_capability(pcie_dev, PCI_EXT_CAP_ID_SECPCI);
-		if (cap_id_offset == 0)
-			return;
-		/* GEN3 preset is at 0xC offset from Secondary PCI Express Extended Capability ID */
-		offset = cap_id_offset + 0xC;
-		msm_pcie_write_reg(pcie_dev->dm_core, offset, pcie_dev->core_preset);
-		/*
-		 * Each register provides preset hint for 2 lanes.
-		 * If there are more than 2 lanes then programing remaining lanes.
-		 */
-		for (i = 2; i < supported_link_width; i = i + 2) {
-			offset += 0x4;
-			msm_pcie_write_reg(pcie_dev->dm_core, offset, pcie_dev->core_preset);
-		}
-	}
+	if (supported_link_speed >= PCI_EXP_LNKCAP_SLS_8_0GB)
+		msm_pcie_write_reg(pcie_dev->dm_core, PCIE_GEN3_SPCIE_CAP,
+				pcie_dev->core_preset);
 
 	/* Gen4 */
-	if (supported_link_speed >= PCI_EXP_LNKCAP_SLS_16_0GB) {
-		cap_id_offset = msm_pci_find_ext_capability(pcie_dev, PCI_EXT_CAP_ID_PL_16GT);
-		if (cap_id_offset == 0)
-			return;
-		/*
-		 * GEN4 preset is at 0x20 offset from Physical Layer
-		 * 16.0 GT/s Extended Capability ID
-		 */
-		offset = cap_id_offset + 0x20;
-		msm_pcie_write_reg(pcie_dev->dm_core, offset, pcie_dev->core_preset);
-		/*
-		 * Each register provides preset hint for 4 lanes.
-		 * If there are more than 4 lanes then programing remaining lanes.
-		 */
-		for (i = 4; i < supported_link_width; i = i + 4) {
-			offset += 0x4;
-			msm_pcie_write_reg(pcie_dev->dm_core, offset, pcie_dev->core_preset);
-		}
-	}
+	if (supported_link_speed >= PCI_EXP_LNKCAP_SLS_16_0GB)
+		msm_pcie_write_reg(pcie_dev->dm_core, PCIE_PL_16GT_CAP +
+				PCI_PL_16GT_LE_CTRL, pcie_dev->core_preset);
 
 	/* disable write access to RO register */
-	msm_pcie_write_mask(pcie_dev->dm_core + PCIE_GEN3_MISC_CONTROL, BIT(0), 0);
+	msm_pcie_write_mask(pcie_dev->dm_core + PCIE_GEN3_MISC_CONTROL, BIT(0),
+				0);
 }
 
 /* Controller settings related to PCIe PHY */
@@ -5599,6 +5498,7 @@ static int msm_pcie_get_gpio(struct msm_pcie_dev_t *pcie_dev)
 {
 	int i, ret;
 
+	pcie_dev->gpio_n = 0;
 	for (i = 0; i < MSM_PCIE_MAX_GPIO; i++) {
 		struct msm_pcie_gpio_info_t *gpio_info = &pcie_dev->gpio[i];
 
@@ -5606,6 +5506,7 @@ static int msm_pcie_get_gpio(struct msm_pcie_dev_t *pcie_dev)
 					gpio_info->name, 0);
 		if (ret >= 0) {
 			gpio_info->num = ret;
+			pcie_dev->gpio_n++;
 			PCIE_DBG(pcie_dev, "GPIO num for %s is %d\n",
 				gpio_info->name, gpio_info->num);
 		} else {
@@ -6003,7 +5904,7 @@ static void msm_pcie_disable_dbi_mirroring(struct msm_pcie_dev_t *dev)
 {
 	struct resource *dbi_res = dev->res[MSM_PCIE_RES_DM_CORE].resource;
 	struct resource *atu_res = dev->res[MSM_PCIE_RES_IATU].resource;
-	u32 slv_addr_space_size = 0x80000000;
+	u64 slv_addr_space_size = U64_MAX;
 
 	/* Configure DBI base address */
 	msm_pcie_write_reg(dev->parf, PCIE20_PARF_DBI_BASE_ADDR,
@@ -6020,14 +5921,14 @@ static void msm_pcie_disable_dbi_mirroring(struct msm_pcie_dev_t *dev)
 				PCIE_UPPER_ADDR(atu_res->start));
 
 	/*
-	 * Program PCIE20_PARF_SLV_ADDR_SPACE_SIZE by setting the highest
-	 * bit (only powers of 2 are valid) so that the DBI/ATU/BAR memory
-	 * doesn't get mirrored to the higher addresses
+	 * Configure to maximum possible 64 bit value so that the DBI/ATU/BAR
+	 * memory dosen't get mirrored to the higher addresses
 	 */
-	msm_pcie_write_reg(dev->parf, PCIE20_PARF_SLV_ADDR_SPACE_SIZE, 0x0);
+	msm_pcie_write_reg(dev->parf, PCIE20_PARF_SLV_ADDR_SPACE_SIZE,
+				PCIE_LOWER_ADDR(slv_addr_space_size));
 
 	msm_pcie_write_reg(dev->parf, PCIE20_PARF_SLV_ADDR_SPACE_SIZE_HI,
-							slv_addr_space_size);
+				PCIE_UPPER_ADDR(slv_addr_space_size));
 }
 
 static int msm_pcie_enable_link(struct msm_pcie_dev_t *dev)
@@ -6281,9 +6182,6 @@ static int msm_pcie_enable(struct msm_pcie_dev_t *dev)
 	ret = msm_pcie_enable_link(dev);
 	if (ret)
 		goto link_fail;
-
-	if (dev->no_client_based_bw_voting)
-		msm_pcie_icc_vote(dev, dev->current_link_speed, dev->current_link_width, false);
 
 	if (dev->enumerated) {
 		if (!dev->lpi_enable)
@@ -8249,9 +8147,6 @@ static void msm_pcie_read_dt(struct msm_pcie_dev_t *pcie_dev, int rc_idx,
 	pcie_dev->l1_1_pcipm_supported = pcie_dev->l1ss_supported;
 	pcie_dev->l1_2_pcipm_supported = pcie_dev->l1ss_supported;
 
-	pcie_dev->no_client_based_bw_voting = of_property_read_bool(of_node,
-				"qcom,no-client-based-bw-voting");
-
 	of_property_read_u32(of_node, "qcom,l1-2-th-scale",
 				&pcie_dev->l1_2_th_scale);
 	of_property_read_u32(of_node, "qcom,l1-2-th-value",
@@ -9202,9 +9097,6 @@ int msm_pcie_set_link_bandwidth(struct pci_dev *pci_dev, u16 target_link_speed,
 	if (target_link_speed < current_link_speed)
 		msm_pcie_scale_link_bandwidth(pcie_dev, target_link_speed);
 
-	msm_pcie_icc_vote(pcie_dev,
-			pcie_dev->current_link_speed, pcie_dev->current_link_width, false);
-
 	PCIE_DBG(pcie_dev, "PCIe: RC%d: successfully switched link bandwidth\n",
 		pcie_dev->rc_idx);
 out:
@@ -9971,8 +9863,7 @@ static int msm_pcie_drv_resume(struct msm_pcie_dev_t *pcie_dev)
 
 	PCIE_DBG(pcie_dev, "PCIe: RC%d:set ICC path vote\n", pcie_dev->rc_idx);
 
-	ret = msm_pcie_icc_vote(pcie_dev, pcie_dev->current_link_speed,
-			pcie_dev->current_link_width, false);
+	ret = msm_pcie_icc_vote(pcie_dev, ICC_AVG_BW, ICC_PEAK_BW, false);
 	if (ret)
 		goto out;
 
@@ -10128,6 +10019,7 @@ static int msm_pcie_drv_suspend(struct msm_pcie_dev_t *pcie_dev,
 	struct msm_pcie_clk_info_t *clk_info;
 	int ret, i;
 	unsigned long irqsave_flags;
+	u32 ab = 0, ib = 0;
 
 	/* If CESTA is available then drv is always supported */
 	if (!pcie_dev->pcie_sm && !drv_info->ep_connected) {
@@ -10169,6 +10061,8 @@ static int msm_pcie_drv_suspend(struct msm_pcie_dev_t *pcie_dev,
 	if (pcie_dev->pcie_sm) {
 		msm_pcie_cesta_enable_drv(pcie_dev,
 				!(options & MSM_PCIE_CONFIG_NO_L1SS_TO));
+		ab = ICC_AVG_BW;
+		ib = ICC_PEAK_BW;
 	}
 
 	/* turn off all unsuppressible clocks */
@@ -10188,11 +10082,7 @@ static int msm_pcie_drv_suspend(struct msm_pcie_dev_t *pcie_dev,
 		msm_pcie_drv_send_rpmsg(pcie_dev,
 					&drv_info->drv_enable_l1ss_sleep);
 
-	if (pcie_dev->pcie_sm)
-		ret = msm_pcie_icc_vote(pcie_dev, pcie_dev->current_link_speed,
-				pcie_dev->current_link_width, true);
-	else
-		ret = msm_pcie_icc_vote(pcie_dev, 0, 0, true);
+	ret = msm_pcie_icc_vote(pcie_dev, ab, ib, true);
 	if (ret) {
 		mutex_unlock(&pcie_dev->setup_lock);
 		mutex_unlock(&pcie_dev->recovery_lock);
@@ -10334,7 +10224,7 @@ static int msm_pcie_handle_pm_resume(struct msm_pcie_dev_t *pcie_dev,
 	mutex_lock(&pcie_dev->enumerate_lock);
 	list_for_each_entry_safe(dev_info_itr, temp,
 				 &pcie_dev->susp_ep_list, pcidev_node) {
-		if (dev_info_itr->dev == pcidev) {
+		if (dev_info_itr->dev == user) {
 			list_del(&dev_info_itr->pcidev_node);
 			dev_info = dev_info_itr;
 			list_add_tail(&dev_info->pcidev_node,
@@ -10389,7 +10279,8 @@ static int msm_pcie_pm_ctrl_sanity_check(struct msm_pcie_dev_t *pcie_dev,
 						enum msm_pcie_pm_opt pm_opt,
 						u32 busnr, u32 options)
 {
-	u32 drv_pm_opts = MSM_PCIE_DRV_SUSPEND | MSM_PCIE_DRV_PC_CTRL;
+	u32 drv_pm_opts = MSM_PCIE_DRV_SUSPEND | MSM_PCIE_DISABLE_PC |
+			MSM_PCIE_ENABLE_PC | MSM_PCIE_DRV_PC_CTRL;
 
 	if (!pcie_dev) {
 		pr_err("PCIe: did not find RC for pci endpoint device.\n");

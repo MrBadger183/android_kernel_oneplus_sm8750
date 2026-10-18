@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -246,7 +246,7 @@ void gh_destroy_vcpu(struct gh_vcpu *vcpu)
 
 int gh_destroy_vm(struct gh_vm *vm)
 {
-	int vcpu_id, ret;
+	int vcpu_id = 0, ret;
 
 	if (vm->status.vm_status == GH_RM_VM_STATUS_NO_STATE)
 		goto clean_vm;
@@ -255,10 +255,11 @@ int gh_destroy_vm(struct gh_vm *vm)
 	if (ret)
 		return ret;
 
-	for (vcpu_id = 0; vm->created_vcpus && vcpu_id < GH_MAX_VCPUS; vcpu_id++) {
+	while (vm->created_vcpus && vcpu_id < GH_MAX_VCPUS) {
 		if (!vm->vcpus[vcpu_id])
 			continue;
 		gh_destroy_vcpu(vm->vcpus[vcpu_id]);
+		vcpu_id++;
 	}
 
 	gh_vm_cleanup(vm);
@@ -267,7 +268,6 @@ int gh_destroy_vm(struct gh_vm *vm)
 	gh_uevent_notify_change(GH_EVENT_DESTROY_VM, vm);
 	memset(vm->fw_name, 0, GH_VM_FW_NAME_MAX);
 	vm->vmid = 0;
-	kfree(vm->ext_region);
 
 clean_vm:
 	gh_rm_unregister_notifier(&vm->rm_nb);
@@ -378,15 +378,7 @@ start_vcpu_run:
 			return ret;
 		}
 	} else {
-		/*
-		 * wait_event is not allowing the process to freez,
-		 * results in device suspend failure. Use wait_event_freezable
-		 * so that device suspends while wait for event.
-		 */
-		ret = wait_event_freezable(vm->vm_status_wait,
-			(vm->status.vm_status == GH_RM_VM_STATUS_EXITED));
-		if (ret < 0)
-			return ret;
+		gh_wait_for_vm_status(vm, GH_RM_VM_STATUS_EXITED);
 		ret = vm->exit_type;
 	}
 
@@ -494,11 +486,7 @@ int gh_reclaim_mem(struct gh_vm *vm, phys_addr_t phys,
 	struct qcom_scm_vmperm destVM[1] = {{VMID_HLOS,
 				PERM_READ | PERM_WRITE | PERM_EXEC}};
 	u64 srcVM = BIT(vmid);
-	bool is_ext_region = false;
 	int ret = 0;
-
-	if (vm->ext_region)
-		is_ext_region = (phys == vm->ext_region->ext_phys);
 
 	if (!is_system_vm) {
 		ret = ghd_rm_mem_reclaim(vm->mem_handle, 0);
@@ -512,23 +500,6 @@ int gh_reclaim_mem(struct gh_vm *vm, phys_addr_t phys,
 	if (ret)
 		pr_err("failed qcom_assign for %pa address of size %zx - subsys VMid %d rc:%d\n",
 			&phys, size, vmid, ret);
-
-	if (is_ext_region) {
-		if (!is_system_vm) {
-			ret = ghd_rm_mem_reclaim(vm->ext_region->ext_mem_handle, 0);
-			if (ret)
-				pr_err("Failed to reclaim memory for %d, %d\n",
-							vm->vmid, ret);
-		}
-		ret |= qcom_scm_assign_mem(vm->ext_region->ext_phys,
-				vm->ext_region->ext_size,
-				&srcVM, destVM, ARRAY_SIZE(destVM));
-		if (ret)
-			pr_err("failed qcom_assign for %pa address of size %zx - subsys VMid %d rc:%d\n",
-					&vm->ext_region->ext_phys,
-					vm->ext_region->ext_size, vmid, ret);
-	}
-
 	return ret;
 }
 
@@ -585,11 +556,7 @@ int gh_provide_mem(struct gh_vm *vm, phys_addr_t phys,
 				PERM_READ | PERM_WRITE | PERM_EXEC}};
 	u64 srcvmid = BIT(srcVM[0].vmid);
 	u64 dstvmid = BIT(destVM[0].vmid);
-	bool is_ext_region = false;
 	int ret = 0;
-
-	if (vm->ext_region)
-		is_ext_region = (phys == vm->ext_region->ext_phys);
 
 	acl_desc = kzalloc(offsetof(struct gh_acl_desc, acl_entries[1]),
 			GFP_KERNEL);
@@ -612,11 +579,6 @@ int gh_provide_mem(struct gh_vm *vm, phys_addr_t phys,
 	sgl_desc->sgl_entries[0].ipa_base = phys;
 	sgl_desc->sgl_entries[0].size = size;
 
-	if (is_ext_region) {
-		destVM[0].perm = PERM_READ;
-		acl_desc->acl_entries[0].perms = GH_RM_ACL_R;
-	}
-
 	ret = qcom_scm_assign_mem(phys, size, &srcvmid, destVM,
 					ARRAY_SIZE(destVM));
 	if (ret) {
@@ -632,18 +594,12 @@ int gh_provide_mem(struct gh_vm *vm, phys_addr_t phys,
 	 * Whereas any memory lent to a non system VM, can be reclaimed
 	 * when VM terminates.
 	 */
-	if (is_system_vm) {
+	if (is_system_vm)
 		ret = gh_rm_mem_donate(GH_RM_MEM_TYPE_NORMAL, 0, 0,
 			acl_desc, sgl_desc, NULL, &vm->mem_handle);
-	} else {
-		if (is_ext_region)
-			ret = ghd_rm_mem_lend(GH_RM_MEM_TYPE_NORMAL, 0,
-					vm->ext_region->ext_label, acl_desc,
-					sgl_desc, NULL, &vm->ext_region->ext_mem_handle);
-		else
-			ret = ghd_rm_mem_lend(GH_RM_MEM_TYPE_NORMAL, 0, 0, acl_desc,
-					sgl_desc, NULL, &vm->mem_handle);
-	}
+	else
+		ret = ghd_rm_mem_lend(GH_RM_MEM_TYPE_NORMAL, 0, 0, acl_desc,
+				sgl_desc, NULL, &vm->mem_handle);
 
 	if (ret) {
 		ret = qcom_scm_assign_mem(phys, size, &dstvmid,
@@ -782,13 +738,11 @@ long gh_vm_init(const char *fw_name, struct gh_vm *vm)
 	long ret = -EINVAL;
 	int nr_vcpus = 0;
 
-	if (!gh_firmware_is_legacy()) {
-		ret = ghd_rm_vm_init(vm->vmid);
-		if (ret) {
-			pr_err("VM_INIT_IMAGE failed for VM:%d %ld\n",
-							vm->vmid, ret);
-			return ret;
-		}
+	ret = ghd_rm_vm_init(vm->vmid);
+	if (ret) {
+		pr_err("VM_INIT_IMAGE failed for VM:%d %ld\n",
+						vm->vmid, ret);
+		return ret;
 	}
 
 	gh_wait_for_vm_status(vm, GH_RM_VM_STATUS_READY);
@@ -814,19 +768,6 @@ long gh_vm_init(const char *fw_name, struct gh_vm *vm)
 	}
 
 	return ret;
-}
-
-int gh_vm_alloc_ext_region(struct gh_vm *vm)
-{
-	struct gh_ext_reg *ext_region;
-
-	ext_region = kzalloc(sizeof(*ext_region), GFP_KERNEL);
-	if (!ext_region)
-		return -ENOMEM;
-
-	vm->ext_region = ext_region;
-
-	return 0;
 }
 
 static long gh_vm_ioctl(struct file *filp,

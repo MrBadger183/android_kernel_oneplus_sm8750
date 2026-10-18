@@ -118,11 +118,9 @@ static inline unsigned int z_erofs_pclusterpages(struct z_erofs_pcluster *pcl)
 
 /*
  * bit 30: I/O error occurred on this page
- * bit 29: CPU has dirty data in D-cache (needs aliasing handling);
  * bit 0 - 29: remaining parts to complete this page
  */
-#define Z_EROFS_ONLINEPAGE_EIO		30
-#define Z_EROFS_ONLINEPAGE_DIRTY	29
+#define Z_EROFS_PAGE_EIO			(1 << 30)
 
 static inline void z_erofs_onlinepage_init(struct page *page)
 {
@@ -141,7 +139,7 @@ static inline void z_erofs_onlinepage_split(struct page *page)
 	atomic_inc((atomic_t *)&page->private);
 }
 
-static void z_erofs_onlinepage_end(struct page *page, int err, bool dirty)
+static void z_erofs_onlinepage_endio(struct page *page, int err)
 {
 	int orig, v;
 
@@ -149,20 +147,16 @@ static void z_erofs_onlinepage_end(struct page *page, int err, bool dirty)
 
 	do {
 		orig = atomic_read((atomic_t *)&page->private);
-		DBG_BUGON(orig <= 0);
-		v = dirty << Z_EROFS_ONLINEPAGE_DIRTY;
-		v |= (orig - 1) | (!!err << Z_EROFS_ONLINEPAGE_EIO);
+		v = (orig - 1) | (err ? Z_EROFS_PAGE_EIO : 0);
 	} while (atomic_cmpxchg((atomic_t *)&page->private, orig, v) != orig);
 
-	if (v & (BIT(Z_EROFS_ONLINEPAGE_DIRTY) - 1))
-		return;
-	set_page_private(page, 0);
-	ClearPagePrivate(page);
-	if (v & BIT(Z_EROFS_ONLINEPAGE_DIRTY))
-		flush_dcache_page(page);
-	if (!(v & BIT(Z_EROFS_ONLINEPAGE_EIO)))
-		SetPageUptodate(page);
-	unlock_page(page);
+	if (!(v & ~Z_EROFS_PAGE_EIO)) {
+		set_page_private(page, 0);
+		ClearPagePrivate(page);
+		if (!(v & Z_EROFS_PAGE_EIO))
+			SetPageUptodate(page);
+		unlock_page(page);
+	}
 }
 
 #define Z_EROFS_ONSTACK_PAGES		32
@@ -342,7 +336,6 @@ static struct workqueue_struct *z_erofs_workqueue __read_mostly;
 
 #ifdef CONFIG_EROFS_FS_PCPU_KTHREAD
 static struct kthread_worker __rcu **z_erofs_pcpu_workers;
-static atomic_t erofs_percpu_workers_initialized = ATOMIC_INIT(0);
 
 static void erofs_destroy_percpu_workers(void)
 {
@@ -388,8 +381,12 @@ static int erofs_init_percpu_workers(void)
 	}
 	return 0;
 }
+#else
+static inline void erofs_destroy_percpu_workers(void) {}
+static inline int erofs_init_percpu_workers(void) { return 0; }
+#endif
 
-#ifdef CONFIG_HOTPLUG_CPU
+#if defined(CONFIG_HOTPLUG_CPU) && defined(CONFIG_EROFS_FS_PCPU_KTHREAD)
 static DEFINE_SPINLOCK(z_erofs_pcpu_worker_lock);
 static enum cpuhp_state erofs_cpuhp_state;
 
@@ -446,53 +443,15 @@ static void erofs_cpu_hotplug_destroy(void)
 	if (erofs_cpuhp_state)
 		cpuhp_remove_state_nocalls(erofs_cpuhp_state);
 }
-#else /* !CONFIG_HOTPLUG_CPU  */
+#else /* !CONFIG_HOTPLUG_CPU || !CONFIG_EROFS_FS_PCPU_KTHREAD */
 static inline int erofs_cpu_hotplug_init(void) { return 0; }
 static inline void erofs_cpu_hotplug_destroy(void) {}
-#endif/* CONFIG_HOTPLUG_CPU */
-static int z_erofs_init_pcpu_workers(struct super_block *sb)
-{
-	int err;
-
-	if (atomic_xchg(&erofs_percpu_workers_initialized, 1))
-		return 0;
-
-	err = erofs_init_percpu_workers();
-	if (err) {
-		erofs_err(sb, "per-cpu workers: failed to allocate.");
-		goto err_init_percpu_workers;
-	}
-
-	err = erofs_cpu_hotplug_init();
-	if (err < 0) {
-		erofs_err(sb, "per-cpu workers: failed CPU hotplug init.");
-		goto err_cpuhp_init;
-	}
-	erofs_info(sb, "initialized per-cpu workers successfully.");
-	return err;
-
-err_cpuhp_init:
-	erofs_destroy_percpu_workers();
-err_init_percpu_workers:
-	atomic_set(&erofs_percpu_workers_initialized, 0);
-	return err;
-}
-
-static void z_erofs_destroy_pcpu_workers(void)
-{
-	if (!atomic_xchg(&erofs_percpu_workers_initialized, 0))
-		return;
-	erofs_cpu_hotplug_destroy();
-	erofs_destroy_percpu_workers();
-}
-#else /* !CONFIG_EROFS_FS_PCPU_KTHREAD */
-static inline int z_erofs_init_pcpu_workers(struct super_block *sb) { return 0; }
-static inline void z_erofs_destroy_pcpu_workers(void) {}
-#endif/* CONFIG_EROFS_FS_PCPU_KTHREAD */
+#endif
 
 void z_erofs_exit_zip_subsystem(void)
 {
-	z_erofs_destroy_pcpu_workers();
+	erofs_cpu_hotplug_destroy();
+	erofs_destroy_percpu_workers();
 	destroy_workqueue(z_erofs_workqueue);
 	z_erofs_destroy_pcluster_pool();
 }
@@ -508,12 +467,23 @@ int __init z_erofs_init_zip_subsystem(void)
 			WQ_UNBOUND | WQ_HIGHPRI, num_possible_cpus());
 	if (!z_erofs_workqueue) {
 		err = -ENOMEM;
-		goto out_err_workqueue_init;
+		goto out_error_workqueue_init;
 	}
 
+	err = erofs_init_percpu_workers();
+	if (err)
+		goto out_error_pcpu_worker;
+
+	err = erofs_cpu_hotplug_init();
+	if (err < 0)
+		goto out_error_cpuhp_init;
 	return err;
 
-out_err_workqueue_init:
+out_error_cpuhp_init:
+	erofs_destroy_percpu_workers();
+out_error_pcpu_worker:
+	destroy_workqueue(z_erofs_workqueue);
+out_error_workqueue_init:
 	z_erofs_destroy_pcluster_pool();
 out_error_pcluster_pool:
 	return err;
@@ -741,14 +711,8 @@ static const struct address_space_operations z_erofs_cache_aops = {
 
 int erofs_init_managed_cache(struct super_block *sb)
 {
-	struct inode *inode;
-	int err;
+	struct inode *const inode = new_inode(sb);
 
-	err = z_erofs_init_pcpu_workers(sb);
-	if (err)
-		return err;
-
-	inode = new_inode(sb);
 	if (!inode)
 		return -ENOMEM;
 
@@ -1093,7 +1057,7 @@ next_part:
 		goto repeat;
 
 out:
-	z_erofs_onlinepage_end(page, err, false);
+	z_erofs_onlinepage_endio(page, err);
 	return err;
 }
 
@@ -1196,7 +1160,7 @@ static void z_erofs_fill_other_copies(struct z_erofs_decompress_backend *be,
 			cur += len;
 		}
 		kunmap_local(dst);
-		z_erofs_onlinepage_end(bvi->bvec.page, err, true);
+		z_erofs_onlinepage_endio(bvi->bvec.page, err);
 		list_del(p);
 		kfree(bvi);
 	}
@@ -1363,7 +1327,7 @@ out:
 		/* recycle all individual short-lived pages */
 		if (z_erofs_put_shortlivedpage(be->pagepool, page))
 			continue;
-		z_erofs_onlinepage_end(page, err, true);
+		z_erofs_onlinepage_endio(page, err);
 	}
 
 	if (be->decompressed_pages != be->onstack_pages)
@@ -1426,16 +1390,6 @@ static void z_erofs_decompressqueue_kthread_work(struct kthread_work *work)
 }
 #endif
 
-/* Use (kthread_)work in atomic contexts to minimize scheduling overhead */
-static inline bool z_erofs_in_atomic(void)
-{
-	if (IS_ENABLED(CONFIG_PREEMPTION) && rcu_preempt_depth())
-		return true;
-	if (!IS_ENABLED(CONFIG_PREEMPT_COUNT))
-		return true;
-	return !preemptible();
-}
-
 static void z_erofs_decompress_kickoff(struct z_erofs_decompressqueue *io,
 				       int bios)
 {
@@ -1450,7 +1404,8 @@ static void z_erofs_decompress_kickoff(struct z_erofs_decompressqueue *io,
 
 	if (atomic_add_return(bios, &io->pending_bios))
 		return;
-	if (z_erofs_in_atomic()) {
+	/* Use (kthread_)work and sync decompression for atomic contexts only */
+	if (!in_task() || irqs_disabled() || rcu_read_lock_any_held()) {
 #ifdef CONFIG_EROFS_FS_PCPU_KTHREAD
 		struct kthread_worker *worker;
 

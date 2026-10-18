@@ -311,14 +311,8 @@ static int glink_pkt_rpdev_probe(struct rpmsg_device *rpdev)
 
 	mutex_lock(&gpdev->lock);
 	gpdev->rpdev = rpdev;
-
-	if (!strcmp(gpdev->edge, "slate")) {
-		gpdev->rx_done = false;
-	} else {
-		gpdev->rx_done = (qcom_glink_rx_done_supported(rpdev->ept) > 0) ? true : false;
-		qcom_glink_register_signals_cb(rpdev->ept, glink_pkt_rpdev_sigs);
-	}
-
+	gpdev->rx_done = (qcom_glink_rx_done_supported(rpdev->ept) > 0) ? true : false;
+	qcom_glink_register_signals_cb(rpdev->ept, glink_pkt_rpdev_sigs);
 	mutex_unlock(&gpdev->lock);
 
 	dev_set_drvdata(&rpdev->dev, gpdev);
@@ -482,12 +476,8 @@ static ssize_t glink_pkt_read(struct file *file,
 		return -EINVAL;
 	}
 
-	if (mutex_lock_interruptible(&gpdev->lock))
-		return -ERESTARTSYS;
-
 	if (!completion_done(&gpdev->ch_open)) {
 		GLINK_PKT_ERR("%s channel in reset\n", gpdev->ch_name);
-		mutex_unlock(&gpdev->lock);
 		return -ENETRESET;
 	}
 
@@ -496,14 +486,11 @@ static ssize_t glink_pkt_read(struct file *file,
 		       task_pid_nr(current), refcount_read(&gpdev->refcount),
 			   gpdev->rdata_len, count);
 
-	mutex_unlock(&gpdev->lock);
-
 	/* Wait for data in the queue */
 	spin_lock_irq(&gpdev->queue_lock);
 	if (skb_queue_empty(&gpdev->queue) && !gpdev->rskb) {
 		if (file->f_flags & O_NONBLOCK) {
 			spin_unlock_irq(&gpdev->queue_lock);
-			mutex_unlock(&gpdev->lock);
 			return -EAGAIN;
 		}
 
@@ -517,12 +504,8 @@ static ssize_t glink_pkt_read(struct file *file,
 
 	if (ret)
 		return -ERESTARTSYS;
-
 	if (!completion_done(&gpdev->ch_open))
 		return -ENETRESET;
-
-	if (mutex_lock_interruptible(&gpdev->lock))
-		return -ERESTARTSYS;
 
 	mutex_lock(&gpdev->rskb_read_lock);
 	spin_lock_irq(&gpdev->queue_lock);
@@ -531,7 +514,6 @@ static ssize_t glink_pkt_read(struct file *file,
 		if (!gpdev->rskb) {
 			spin_unlock_irq(&gpdev->queue_lock);
 			mutex_unlock(&gpdev->rskb_read_lock);
-			mutex_unlock(&gpdev->lock);
 			return 0;
 		}
 		gpdev->rdata = gpdev->rskb->data;
@@ -565,7 +547,6 @@ static ssize_t glink_pkt_read(struct file *file,
 	GLINK_PKT_INFO("end for %s by %s:%d ret[%d], remaining[%lu]\n", gpdev->ch_name,
 		       current->comm, task_pid_nr(current), ret, gpdev->rdata_len);
 
-	mutex_unlock(&gpdev->lock);
 	return ret;
 }
 
@@ -690,9 +671,6 @@ static int glink_pkt_tiocmset(struct glink_pkt_device *gpdev, unsigned int cmd,
 {
 	u32 set, clear, val;
 	int ret;
-
-	if (!strcmp(gpdev->edge, "slate"))
-		return -ENOIOCTLCMD;
 
 	ret = get_user(val, arg);
 	if (ret)
@@ -1021,11 +999,6 @@ static long glink_pkt_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case TIOCMGET:
-		if (!strcmp(gpdev->edge, "slate")) {
-			ret = -ENOIOCTLCMD;
-			break;
-		}
-
 		spin_lock_irqsave(&gpdev->queue_lock, flags);
 		gpdev->sig_change = false;
 		spin_unlock_irqrestore(&gpdev->queue_lock, flags);
@@ -1033,7 +1006,6 @@ static long glink_pkt_ioctl(struct file *file, unsigned int cmd,
 		ret = qcom_glink_get_signals(gpdev->rpdev->ept);
 		if (ret >= 0)
 			ret = put_user(ret, (int __user *)arg);
-
 		break;
 	case TIOCMSET:
 	case TIOCMBIS:

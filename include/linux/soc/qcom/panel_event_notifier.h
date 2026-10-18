@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __PANEL_EVENT_NOTIFIER_H
@@ -34,6 +34,10 @@ enum panel_event_notifier_client {
 	PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_CHG,
 	PANEL_EVENT_NOTIFIER_CLIENT_SECONDARY_CHG,
 	PANEL_EVENT_NOTIFIER_CLIENT_WLS_PEN_CHG,
+//#endif
+//#if IS_ENABLED(CONFIG_OPLUS_FEATURE_THEIA)
+	PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_THEIA_BLACK,
+	PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_THEIA_BRIGHT,
 //#endif
 	PANEL_EVENT_NOTIFIER_CLIENT_MM,
 	PANEL_EVENT_NOTIFIER_CLIENT_TRI_STATE_KEY,

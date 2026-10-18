@@ -219,7 +219,6 @@ struct eventpoll {
 	/* used to optimize loop detection check */
 	u64 gen;
 	struct hlist_head refs;
-	u8 loop_check_depth;
 
 	/*
 	 * usage count, used together with epitem->dying to
@@ -775,7 +774,7 @@ static bool __ep_remove(struct eventpoll *ep, struct epitem *epi, bool force)
 	call_rcu(&epi->rcu, epi_rcu_free);
 
 	percpu_counter_dec(&ep->user->epoll_watches);
-	return true;
+	return ep_refcount_dec_and_test(ep);
 }
 
 /*
@@ -783,14 +782,14 @@ static bool __ep_remove(struct eventpoll *ep, struct epitem *epi, bool force)
  */
 static void ep_remove_safe(struct eventpoll *ep, struct epitem *epi)
 {
-	if (__ep_remove(ep, epi, false))
-		WARN_ON_ONCE(ep_refcount_dec_and_test(ep));
+	WARN_ON_ONCE(__ep_remove(ep, epi, false));
 }
 
 static void ep_clear_and_put(struct eventpoll *ep)
 {
 	struct rb_node *rbp, *next;
 	struct epitem *epi;
+	bool dispose;
 
 	/* We need to release all tasks waiting for these file */
 	if (waitqueue_active(&ep->poll_wait))
@@ -823,8 +822,10 @@ static void ep_clear_and_put(struct eventpoll *ep)
 		cond_resched();
 	}
 
+	dispose = ep_refcount_dec_and_test(ep);
 	mutex_unlock(&ep->mtx);
-	if (ep_refcount_dec_and_test(ep))
+
+	if (dispose)
 		ep_free(ep);
 }
 
@@ -1004,7 +1005,7 @@ again:
 		dispose = __ep_remove(ep, epi, true);
 		mutex_unlock(&ep->mtx);
 
-		if (dispose && ep_refcount_dec_and_test(ep))
+		if (dispose)
 			ep_free(ep);
 		goto again;
 	}
@@ -1994,23 +1995,22 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 }
 
 /**
- * ep_loop_check_proc - verify that adding an epoll file @ep inside another
- *                      epoll file does not create closed loops, and
- *                      determine the depth of the subtree starting at @ep
+ * ep_loop_check_proc - verify that adding an epoll file inside another
+ *                      epoll structure does not violate the constraints, in
+ *                      terms of closed loops, or too deep chains (which can
+ *                      result in excessive stack usage).
  *
  * @ep: the &struct eventpoll to be currently checked.
  * @depth: Current depth of the path being checked.
  *
- * Return: depth of the subtree, or INT_MAX if we found a loop or went too deep.
+ * Return: %zero if adding the epoll @file inside current epoll
+ *          structure @ep does not violate the constraints, or %-1 otherwise.
  */
 static int ep_loop_check_proc(struct eventpoll *ep, int depth)
 {
-	int result = 0;
+	int error = 0;
 	struct rb_node *rbp;
 	struct epitem *epi;
-
-	if (ep->gen == loop_check_gen)
-		return ep->loop_check_depth;
 
 	mutex_lock_nested(&ep->mtx, depth + 1);
 	ep->gen = loop_check_gen;
@@ -2019,11 +2019,13 @@ static int ep_loop_check_proc(struct eventpoll *ep, int depth)
 		if (unlikely(is_file_epoll(epi->ffd.file))) {
 			struct eventpoll *ep_tovisit;
 			ep_tovisit = epi->ffd.file->private_data;
+			if (ep_tovisit->gen == loop_check_gen)
+				continue;
 			if (ep_tovisit == inserting_into || depth > EP_MAX_NESTS)
-				result = INT_MAX;
+				error = -1;
 			else
-				result = max(result, ep_loop_check_proc(ep_tovisit, depth + 1) + 1);
-			if (result > EP_MAX_NESTS)
+				error = ep_loop_check_proc(ep_tovisit, depth + 1);
+			if (error != 0)
 				break;
 		} else {
 			/*
@@ -2037,27 +2039,9 @@ static int ep_loop_check_proc(struct eventpoll *ep, int depth)
 			list_file(epi->ffd.file);
 		}
 	}
-	ep->loop_check_depth = result;
 	mutex_unlock(&ep->mtx);
 
-	return result;
-}
-
-/**
- * ep_get_upwards_depth_proc - determine depth of @ep when traversed upwards
- */
-static int ep_get_upwards_depth_proc(struct eventpoll *ep, int depth)
-{
-	int result = 0;
-	struct epitem *epi;
-
-	if (ep->gen == loop_check_gen)
-		return ep->loop_check_depth;
-	hlist_for_each_entry_rcu(epi, &ep->refs, fllink)
-		result = max(result, ep_get_upwards_depth_proc(epi->ep, depth + 1) + 1);
-	ep->gen = loop_check_gen;
-	ep->loop_check_depth = result;
-	return result;
+	return error;
 }
 
 /**
@@ -2073,22 +2057,8 @@ static int ep_get_upwards_depth_proc(struct eventpoll *ep, int depth)
  */
 static int ep_loop_check(struct eventpoll *ep, struct eventpoll *to)
 {
-	int depth, upwards_depth;
-
 	inserting_into = ep;
-	/*
-	 * Check how deep down we can get from @to, and whether it is possible
-	 * to loop up to @ep.
-	 */
-	depth = ep_loop_check_proc(to, 0);
-	if (depth > EP_MAX_NESTS)
-		return -1;
-	/* Check how far up we can go from @ep. */
-	rcu_read_lock();
-	upwards_depth = ep_get_upwards_depth_proc(ep, 0);
-	rcu_read_unlock();
-
-	return (depth+1+upwards_depth > EP_MAX_NESTS) ? -1 : 0;
+	return ep_loop_check_proc(to, 0);
 }
 
 static void clear_tfile_check_list(void)

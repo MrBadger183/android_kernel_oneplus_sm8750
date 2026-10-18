@@ -14,12 +14,8 @@ la_variants = [
 
 le_targets = [
     # keep sorted
-    "kera-le",
-    "qcs610",
     "sdxkova",
-    "sdxkova.cpe.wkk",
     "sun-allyes",
-    "sun-le",
 ]
 
 le_variants = [
@@ -33,17 +29,12 @@ vm_types = [
     "oemvm",
 ]
 
-parrot_vm_types = [
-    "tuivm",
+vm_target_bases = [
+    "pineapple",
+    "sun",
 ]
 
-vm_target_bases = {
-    "pineapple": vm_types,
-    "sun": vm_types,
-    "parrot": parrot_vm_types,
-}
-
-vm_targets = ["{}-{}".format(t, vt) for t in vm_target_bases.keys() for vt in vm_target_bases[t]]
+vm_targets = ["{}-{}".format(t, vt) for t in vm_target_bases for vt in vm_types]
 
 vm_variants = [
     # keep sorted

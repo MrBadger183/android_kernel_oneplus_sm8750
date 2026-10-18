@@ -1104,21 +1104,11 @@ static int populate_free_space_tree(struct btrfs_trans_handle *trans,
 	ret = btrfs_search_slot_for_read(extent_root, &key, path, 1, 0);
 	if (ret < 0)
 		goto out_locked;
-	/*
-	 * If ret is 1 (no key found), it means this is an empty block group,
-	 * without any extents allocated from it and there's no block group
-	 * item (key BTRFS_BLOCK_GROUP_ITEM_KEY) located in the extent tree
-	 * because we are using the block group tree feature, so block group
-	 * items are stored in the block group tree. It also means there are no
-	 * extents allocated for block groups with a start offset beyond this
-	 * block group's end offset (this is the last, highest, block group).
-	 */
-	if (!btrfs_fs_compat_ro(trans->fs_info, BLOCK_GROUP_TREE))
-		ASSERT(ret == 0);
+	ASSERT(ret == 0);
 
 	start = block_group->start;
 	end = block_group->start + block_group->length;
-	while (ret == 0) {
+	while (1) {
 		btrfs_item_key_to_cpu(path->nodes[0], &key, path->slots[0]);
 
 		if (key.type == BTRFS_EXTENT_ITEM_KEY ||
@@ -1148,6 +1138,8 @@ static int populate_free_space_tree(struct btrfs_trans_handle *trans,
 		ret = btrfs_next_item(extent_root, path);
 		if (ret < 0)
 			goto out_locked;
+		if (ret)
+			break;
 	}
 	if (start < end) {
 		ret = __add_to_free_space_tree(trans, block_group, path2,
@@ -1371,17 +1363,12 @@ static int __add_block_group_free_space(struct btrfs_trans_handle *trans,
 	clear_bit(BLOCK_GROUP_FLAG_NEEDS_FREE_SPACE, &block_group->runtime_flags);
 
 	ret = add_new_free_space_info(trans, block_group, path);
-	if (ret) {
-		btrfs_abort_transaction(trans, ret);
-		return ret;
-	}
-
-	ret = __add_to_free_space_tree(trans, block_group, path,
-				       block_group->start, block_group->length);
 	if (ret)
-		btrfs_abort_transaction(trans, ret);
+		return ret;
 
-	return 0;
+	return __add_to_free_space_tree(trans, block_group, path,
+					block_group->start,
+					block_group->length);
 }
 
 int add_block_group_free_space(struct btrfs_trans_handle *trans,
@@ -1401,14 +1388,16 @@ int add_block_group_free_space(struct btrfs_trans_handle *trans,
 	path = btrfs_alloc_path();
 	if (!path) {
 		ret = -ENOMEM;
-		btrfs_abort_transaction(trans, ret);
 		goto out;
 	}
 
 	ret = __add_block_group_free_space(trans, block_group, path);
+
 out:
 	btrfs_free_path(path);
 	mutex_unlock(&block_group->free_space_lock);
+	if (ret)
+		btrfs_abort_transaction(trans, ret);
 	return ret;
 }
 

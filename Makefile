@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 6
 PATCHLEVEL = 6
-SUBLEVEL = 104
+SUBLEVEL = 118
 EXTRAVERSION =
 NAME = Pinguïn Aangedreven
 
@@ -1111,7 +1111,7 @@ KBUILD_USERCFLAGS  += $(filter -m32 -m64 --target=%, $(KBUILD_CPPFLAGS) $(KBUILD
 KBUILD_USERLDFLAGS += $(filter -m32 -m64 --target=%, $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS))
 
 # userspace programs are linked via the compiler, use the correct linker
-ifdef CONFIG_CC_IS_CLANG
+ifeq ($(CONFIG_CC_IS_CLANG)$(CONFIG_LD_IS_LLD),yy)
 KBUILD_USERLDFLAGS += $(call cc-option, --ld-path=$(LD))
 endif
 
@@ -1163,17 +1163,6 @@ export MODULES_NSDEPS := $(extmod_prefix)modules.nsdeps
 
 PHONY += headers
 
-ext-mod-dir := ../sm8750-modules
-ext-mod-dirs := \
-	$(ext-mod-dir)/qcom/opensource/audio-kernel \
-	$(ext-mod-dir)/qcom/opensource/dataipa/drivers/platform/msm \
-	$(ext-mod-dir)/qcom/opensource/display-drivers \
- 	$(ext-mod-dir)/qcom/opensource/mm-sys-kernel/ubwcp \
- 	$(ext-mod-dir)/qcom/opensource/securemsm-kernel/smmu-proxy \
-	$(ext-mod-dir)/qcom/opensource/video-kernel \
-	$(ext-mod-dir)/nxp/opensource/driver
-ext-mod-dirs := $(subst $(srctree)/,,$(ext-mod-dirs))
-
 #Default location for installed headers
 ifeq ($(KBUILD_EXTMOD),)
 PHONY += archheaders archscripts
@@ -1202,9 +1191,6 @@ ifeq ($(KBUILD_EXTMOD),)
 endif
 	$(Q)$(MAKE) $(hdr-inst)=$(hdr-prefix)include/uapi
 	$(Q)$(MAKE) $(hdr-inst)=$(hdr-prefix)arch/$(SRCARCH)/include/uapi
-	$(Q)for d in $(ext-mod-dirs); do \
-		$(MAKE) $(hdr-inst)=$$d/include/uapi; \
-	done
 
 # ---------------------------------------------------------------------------
 # Devicetree files

@@ -21,6 +21,10 @@
 #include "walt.h"
 #include "trace.h"
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+#include <../kernel/oplus_cpu/sched/sched_assist/sa_pipeline.h>
+#endif
+
 /* mask of all CPUs with a fully pause claim outstanding */
 cpumask_t cpus_paused_by_us = { CPU_BITS_NONE };
 
@@ -58,10 +62,8 @@ struct cluster_data {
 	unsigned int		strict_nrrun;
 	cpumask_t		nrrun_cpu_mask;
 	cpumask_t		nrrun_cpu_misfit_mask;
-	unsigned int		nrrun_cpu_min_misfit;
 	cpumask_t		assist_cpu_mask;
 	cpumask_t		assist_cpu_misfit_mask;
-	unsigned int		assist_cpu_min_misfit;
 };
 
 struct cpu_data {
@@ -549,44 +551,6 @@ static ssize_t show_assist_cpu_misfit_mask(const struct cluster_data *state, cha
 	return ret;
 }
 
-static ssize_t store_assist_cpu_min_misfit(struct cluster_data *state,
-				const char *buf, size_t count)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	state->assist_cpu_min_misfit = val;
-	sysfs_param_changed(state);
-
-	return count;
-}
-
-static ssize_t show_assist_cpu_min_misfit(const struct cluster_data *state, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%u\n", state->assist_cpu_min_misfit);
-}
-
-static ssize_t store_nrrun_cpu_min_misfit(struct cluster_data *state,
-				const char *buf, size_t count)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	state->nrrun_cpu_min_misfit = val;
-	sysfs_param_changed(state);
-
-	return count;
-}
-
-static ssize_t show_nrrun_cpu_min_misfit(const struct cluster_data *state, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%u\n", state->nrrun_cpu_min_misfit);
-}
-
 struct core_ctl_attr {
 	struct attribute	attr;
 	ssize_t			(*show)(const struct cluster_data *cd, char *c);
@@ -616,10 +580,8 @@ core_ctl_attr_rw(not_preferred);
 core_ctl_attr_rw(enable);
 core_ctl_attr_rw(nrrun_cpu_mask);
 core_ctl_attr_rw(nrrun_cpu_misfit_mask);
-core_ctl_attr_rw(nrrun_cpu_min_misfit);
 core_ctl_attr_rw(assist_cpu_mask);
 core_ctl_attr_rw(assist_cpu_misfit_mask);
-core_ctl_attr_rw(assist_cpu_min_misfit);
 
 static struct attribute *default_attrs[] = {
 	&min_cpus.attr,
@@ -636,10 +598,8 @@ static struct attribute *default_attrs[] = {
 	&not_preferred.attr,
 	&nrrun_cpu_mask.attr,
 	&nrrun_cpu_misfit_mask.attr,
-	&nrrun_cpu_min_misfit.attr,
 	&assist_cpu_mask.attr,
 	&assist_cpu_misfit_mask.attr,
-	&assist_cpu_min_misfit.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(default);
@@ -997,44 +957,37 @@ static void update_running_avg(u64 window_start, u32 wakeup_ctr_sum)
 	for_each_cluster(cluster, index) {
 		int nr_need, nr_misfit_need;
 		int nr_assist_need, nr_misfit_assist_need, nr_assist_active;
-		unsigned int target_nr_misfit_assist_need = 0;
-		unsigned int target_nr_misfit_need = 0;
 
 		if (!cluster->inited)
 			continue;
 
 		nr_need = compute_cluster_nr_run(index);
 		nr_misfit_need = compute_cluster_nr_misfit(index);
-		if (nr_misfit_need > cluster->nrrun_cpu_min_misfit)
-			target_nr_misfit_need = nr_misfit_need;
 
-		cluster->nrrun = nr_need + target_nr_misfit_need;
+		cluster->nrrun = nr_need + nr_misfit_need;
 		cluster->max_nr = compute_cluster_max_nr(index);
 
 		nr_assist_need = compute_cluster_nr_run_assist(index);
 		nr_misfit_assist_need = compute_cluster_nr_misfit_assist(index);
-		if (nr_misfit_assist_need > cluster->assist_cpu_min_misfit)
-			target_nr_misfit_assist_need = nr_misfit_assist_need;
 
 		cluster->strict_nrrun = compute_cluster_nr_strict_need(index);
 		nr_assist_active = get_assist_active_cpu_count(cluster);
 
 		if (!cpumask_intersects(&cluster->assist_cpu_mask, &cpus_paused_by_us) &&
 		    !cpumask_intersects(&cluster->assist_cpu_mask, &cpus_part_paused_by_us) &&
-		    nr_assist_need + target_nr_misfit_assist_need > nr_assist_active)
+		    nr_assist_need + nr_misfit_assist_need > nr_assist_active)
 			cluster->nr_assist = nr_assist_need +
-					target_nr_misfit_assist_need - nr_assist_active;
+					nr_misfit_assist_need - nr_assist_active;
 		else
 			cluster->nr_assist = 0;
 
 		cluster->nr_busy = compute_cluster_nr_busy(index);
 
 		trace_core_ctl_update_nr_need(cluster->first_cpu, nr_need,
-					nr_misfit_need, cluster->nrrun,
-					cluster->nrrun_cpu_min_misfit, cluster->max_nr,
+					nr_misfit_need, cluster->nrrun, cluster->max_nr,
 					cluster->strict_nrrun, nr_assist_need,
 					nr_misfit_assist_need, cluster->nr_assist,
-					cluster->nr_busy, cluster->assist_cpu_min_misfit);
+					cluster->nr_busy);
 
 		cluster->nr_big = cluster_real_big_tasks(index);
 		big_avg += cluster->nr_big;
@@ -1096,6 +1049,11 @@ static unsigned int apply_limits(const struct cluster_data *cluster,
 {
 	if (!cluster->enable)
 		return cluster->num_cpus;
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+	if (cluster->boost && oplus_is_pipeline_scene())
+		return cluster->num_cpus;
+#endif
 
 	return min(max(cluster->min_cpus, need_cpus), cluster->max_cpus);
 }
@@ -1348,26 +1306,6 @@ static bool core_ctl_check_masks_set(void)
 	return all_masks_set;
 }
 
-#define SBT_CPU_BUSY_PCT_THRESH 20
-static bool core_ctl_non_large_cpus_below_busy_pct(void)
-{
-	cpumask_t non_large_cpus = { CPU_BITS_NONE };
-	struct cpu_data *c;
-	int cpu;
-	int i;
-
-	for (i = 0; i < num_sched_clusters - 1; i++)
-		cpumask_or(&non_large_cpus, &non_large_cpus, &cpu_array[0][i]);
-
-	for_each_cpu(cpu, &non_large_cpus) {
-		c = &per_cpu(cpu_state, cpu);
-		if (c->busy_pct > SBT_CPU_BUSY_PCT_THRESH)
-			return false;
-	}
-
-	return true;
-}
-
 bool prev_is_sbt;
 #define SBT_LIMIT 45
 /* is the system in a single-big-thread case? */
@@ -1386,9 +1324,6 @@ static inline bool core_ctl_is_sbt(int prev_is_sbt_windows, u32 wakeup_ctr_sum)
 		goto out;
 
 	if (wakeup_ctr_sum > SBT_LIMIT)
-		goto out;
-
-	if (!core_ctl_non_large_cpus_below_busy_pct())
 		goto out;
 
 	ret = true;
@@ -1881,8 +1816,6 @@ static int cluster_init(const struct cpumask *mask)
 	cluster->nr_not_preferred_cpus = 0;
 	cluster->strict_nrrun = 0;
 	cluster->nr_big = 0;
-	cluster->assist_cpu_min_misfit = 0;
-	cluster->nrrun_cpu_min_misfit = 0;
 
 	/*
 	 * set all cpus in the cluster.  this is an invalid state
@@ -1937,6 +1870,10 @@ int core_ctl_init(void)
 		if (ret)
 			pr_warn("unable to create core ctl group: %d\n", ret);
 	}
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+	oplus_core_ctl_set_cluster_boost = core_ctl_set_cluster_boost;
+#endif
 
 	initialized = true;
 

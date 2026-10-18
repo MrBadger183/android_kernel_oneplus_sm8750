@@ -1,6 +1,6 @@
-load(":image_opts.bzl", "boot_image_opts")
-load(":msm_kernel_la.bzl", "define_msm_la")
 load(":target_variants.bzl", "la_variants")
+load(":msm_kernel_la.bzl", "define_msm_la")
+load(":image_opts.bzl", "boot_image_opts")
 
 target_name = "monaco"
 
@@ -24,6 +24,8 @@ def define_monaco():
         "drivers/dma/qcom/bam_dma.ko",
         "drivers/dma/qcom/msm_gpi.ko",
         "drivers/firmware/qcom-scm.ko",
+        "drivers/firmware/qcom/si_core/mem_object.ko",
+        "drivers/firmware/qcom/si_core/si_core_module.ko",
         "drivers/hwspinlock/qcom_hwspinlock.ko",
         "drivers/hwtracing/coresight/coresight.ko",
         "drivers/hwtracing/coresight/coresight-csr.ko",
@@ -54,6 +56,7 @@ def define_monaco():
         "drivers/iommu/arm/arm-smmu/arm_smmu.ko",
         "drivers/iommu/iommu-logger.ko",
         "drivers/iommu/msm_dma_iommu_mapping.ko",
+        "drivers/iommu/qcom_iommu_debug.ko",
         "drivers/iommu/qcom_iommu_util.ko",
         "drivers/irqchip/msm_show_resume_irq.ko",
         "drivers/irqchip/qcom-mpm.ko",
@@ -93,7 +96,6 @@ def define_monaco():
         "drivers/rpmsg/glink_pkt.ko",
         "drivers/rpmsg/qcom_glink.ko",
         "drivers/rpmsg/qcom_glink_rpm.ko",
-        "drivers/rpmsg/qcom_glink_slatecom.ko",
         "drivers/rpmsg/qcom_glink_smem.ko",
         "drivers/rpmsg/qcom_glink_spss.ko",
         "drivers/rpmsg/qcom_smd.ko",
@@ -103,8 +105,6 @@ def define_monaco():
         "drivers/slimbus/slimbus.ko",
         "drivers/soc/qcom/boot_stats.ko",
         "drivers/soc/qcom/cpu_phys_log_map.ko",
-        "drivers/soc/qcom/crypto-qti-common.ko",
-        "drivers/soc/qcom/crypto-qti-hwkm.ko",
         "drivers/soc/qcom/dcc_v2.ko",
         "drivers/soc/qcom/dcvs/bwmon.ko",
         "drivers/soc/qcom/dcvs/memlat.ko",
@@ -112,15 +112,12 @@ def define_monaco():
         "drivers/soc/qcom/dcvs/qcom-pmu-lib.ko",
         "drivers/soc/qcom/debug_symbol.ko",
         "drivers/soc/qcom/eud.ko",
-        "drivers/soc/qcom/hwkm_v1.ko",
         "drivers/soc/qcom/mdt_loader.ko",
         "drivers/soc/qcom/mem_buf/mem_buf.ko",
         "drivers/soc/qcom/mem_buf/mem_buf_dev.ko",
         "drivers/soc/qcom/memory_dump_v2.ko",
         "drivers/soc/qcom/memshare/heap_mem_ext_v01.ko",
         "drivers/soc/qcom/memshare/msm_memshare.ko",
-        "drivers/soc/qcom/minidump.ko",
-        "drivers/soc/qcom/msm_performance.ko",
         "drivers/soc/qcom/msm_show_epoch.ko",
         "drivers/soc/qcom/panel_event_notifier.ko",
         "drivers/soc/qcom/pdr_interface.ko",
@@ -128,14 +125,13 @@ def define_monaco():
         "drivers/soc/qcom/qcom_cpu_vendor_hooks.ko",
         "drivers/soc/qcom/qcom_ice.ko",
         "drivers/soc/qcom/qcom_logbuf_boot_log.ko",
+        "drivers/soc/qcom/qcom_logbuf_vendor_hooks.ko",
         "drivers/soc/qcom/qcom_ramdump.ko",
         "drivers/soc/qcom/qcom_soc_wdt.ko",
-        "drivers/soc/qcom/qcom_stats.ko",
         "drivers/soc/qcom/qcom_wdt_core.ko",
         "drivers/soc/qcom/qmi_helpers.ko",
         "drivers/soc/qcom/qsee_ipc_irq_bridge.ko",
         "drivers/soc/qcom/qti-pmic-lpm.ko",
-        "drivers/soc/qcom/rq_stats.ko",
         "drivers/soc/qcom/secure_buffer.ko",
         "drivers/soc/qcom/slate_events_bridge.ko",
         "drivers/soc/qcom/slate_events_bridge_rpmsg.ko",
@@ -149,7 +145,6 @@ def define_monaco():
         "drivers/soc/qcom/smp2p.ko",
         "drivers/soc/qcom/socinfo.ko",
         "drivers/soc/qcom/sps/sps_drv.ko",
-        "drivers/soc/qcom/sysmon_subsystem_stats.ko",
         "drivers/soc/qcom/wcd_usbss_i2c.ko",
         "drivers/spi/spi-msm-geni.ko",
         "drivers/spmi/spmi-pmic-arb.ko",
@@ -169,6 +164,8 @@ def define_monaco():
         "drivers/thermal/qcom/thermal_config.ko",
         "drivers/thermal/qcom/thermal_pause.ko",
         "drivers/tty/serial/msm_geni_serial.ko",
+        "drivers/ufs/host/ufs-qcom.ko",
+        "drivers/ufs/host/ufshcd-crypto-qti.ko",
         "drivers/uio/msm_sharedmem/msm_sharedmem.ko",
         "drivers/usb/dwc3/dwc3-msm.ko",
         "drivers/usb/gadget/function/f_fs_ipc_log.ko",
@@ -189,7 +186,6 @@ def define_monaco():
     _monaco_consolidate_in_tree_modules = _monaco_in_tree_modules + [
         # keep sorted
         "drivers/hwtracing/coresight/coresight-etm4x.ko",
-        "drivers/iommu/qcom_iommu_debug.ko",
         "drivers/misc/lkdtm/lkdtm.ko",
         "kernel/locking/locktorture.ko",
         "kernel/rcu/rcutorture.ko",
@@ -199,7 +195,12 @@ def define_monaco():
         "lib/test_user_copy.ko",
     ]
 
-    kernel_vendor_cmdline_extras = ["bootconfig"]
+    kernel_vendor_cmdline_extras = [
+        # do not sort
+        "console=ttyMSM0,115200n8",
+        "qcom_geni_serial.con_enabled=1",
+        "bootconfig",
+    ]
 
     for variant in la_variants:
         board_kernel_cmdline_extras = []
@@ -207,22 +208,11 @@ def define_monaco():
 
         if variant == "consolidate":
             mod_list = _monaco_consolidate_in_tree_modules
-            board_bootconfig_extras += ["androidboot.serialconsole=1"]
-            board_kernel_cmdline_extras += [
-                # do not sort
-                "console=ttyMSM0,115200n8",
-                "earlycon",
-            ]
-            kernel_vendor_cmdline_extras += [
-                # do not sort
-                "console=ttyMSM0,115200n8",
-                "earlycon",
-            ]
         else:
             mod_list = _monaco_in_tree_modules
-            board_kernel_cmdline_extras += ["nosoftlockup console=ttynull"]
-            kernel_vendor_cmdline_extras += ["nosoftlockup console=ttynull"]
-            board_bootconfig_extras += ["androidboot.serialconsole=0"]
+            board_kernel_cmdline_extras += ["nosoftlockup"]
+            kernel_vendor_cmdline_extras += ["nosoftlockup"]
+            board_bootconfig_extras += ["androidboot.console=0"]
 
         define_msm_la(
             msm_target = target_name,

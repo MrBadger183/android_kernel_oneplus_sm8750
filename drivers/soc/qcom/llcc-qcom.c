@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/bitfield.h>
@@ -498,162 +498,6 @@ static const struct llcc_slice_config sun_data[] = {
 						1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
-static const struct llcc_slice_config sm6150_data[] = {
-	{LLCC_CPUSS,    1, 128, 1, 0, 0xFFFFFF, 0x0, 0, 0, 0, 1, 1, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDM,      8, 256, 0, 1, 0xFFFFFF, 0x0, 0, 0, 0, 1, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPUHTW,   11, 128, 1, 1, 0xFFFFFF, 0x0, 0, 0, 0, 1, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPU,      12, 128, 1, 0, 0xFFFFFF, 0x0, 0, 0, 0, 1, 0, 0,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-};
-
-static const struct llcc_slice_config tuna_data[] = {
-	{LLCC_CPUSS,     1, 4992, 1, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPFX,  24, 1024, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_VIDSC0,    2,  512, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_AUDIO,    35,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPGRW, 25, 1024, 5, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CMPT,     15, 4096, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPUHTW,   11,  256, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPU,       9, 4736, 1, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MMUHWT,   18,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_DISP,     16, 4096, 1, 1, 0xFFFFFF,
-			0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CAMFW,    20,    0, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMPNG,   27,  256, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CVP,       8,  800, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_MODPE,    29,  256, 1, 1, 0xF00000,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_WRCACHE,  31,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CVPFW,    19,   64, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_LCPDARE,  30,  128, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_ISLAND1,  12, 5888, 7, 1, 0x0,
-			0x7FFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_VIDVSP,    4,  256, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CAMOFE,   33, 2912, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTIP,  13, 2912, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTIP, 14, 1024, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTRF,   7, 2912, 3, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTRF, 21, 2912, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CPUSSMPAM, 6, 2048, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-};
-
-static const struct llcc_slice_config tuna7_data[] = {
-	{LLCC_CPUSS,     1, 4992, 1, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPFX,  24, 1024, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_VIDSC0,    2,  512, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_AUDIO,    35,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPGRW, 25, 1024, 5, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CMPT,     15, 4096, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPUHTW,   11,  256, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPU,       9, 4736, 1, 0, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MMUHWT,   18,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_DISP,     16, 4096, 1, 1, 0xFFFFFF,
-			0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CAMFW,    20,    0, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMPNG,   27,  256, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CVP,       8,  800, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_MODPE,    29,  256, 1, 1, 0xF00000,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_WRCACHE,  31,  512, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CVPFW,    19,   64, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_LCPDARE,  30,  128, 5, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_ISLAND1,  12, 3072, 7, 1,      0x0,
-			0xFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_VIDVSP,    4,  256, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CAMOFE,   33, 2912, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTIP,  13, 2912, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTIP, 14, 1024, 4, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTRF,   7, 2912, 3, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTRF, 21, 2912, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CPUSSMPAM, 6, 2048, 1, 1, 0xFFFFFF,
-			0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-};
-
-static const struct llcc_slice_config kera_data[] = {
-	{LLCC_CPUSS,     1,  896, 0, 0, 0xFFF, 0, 0, 0, 0, 0, 1,
-						1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPFX,  24, 1024, 5, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_VIDSC0,    2,  128, 5, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMHPGRW, 25, 1024, 5, 0, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPUHTW,   11,  256, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_GPU,       9,  896, 1, 0, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MMUHWT,   18,  256, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 1,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MDMPNG,   27,  256, 5, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_MODPE,    29,  256, 1, 1, 0xF00, 0, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_WRCACHE,  31,  256, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 1,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_LCPDARE,  30,  128, 5, 1, 0xFFF, 0, 0, 0, 0, 0, 1,
-						0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
-	{LLCC_ISLAND1,  12, 1280, 7, 1, 0, 0x3FF, 0, 0, 0, 0, 0,
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	{LLCC_CAMOFE,   33, 1024, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTIP,  13, 1024, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTIP, 14, 512, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMRTRF,   7, 1024, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CAMSRTRF, 21, 1024, 1, 1, 0xFFF, 0, 0, 0, 0, 0, 0,
-						0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 13},
-	{LLCC_CPUSSMPAM, 6, 512, 0, 1, 0xFFF, 0, 0, 0, 0, 0, 1,
-						1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-};
-
 static const struct llcc_slice_config x1e80100_data[] = {
 	{LLCC_CPUSS,	 1, 6144, 1, 1, 0xFFF, 0x0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 	{LLCC_VIDSC0,	 2,  512, 3, 1, 0xFFF, 0x0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -791,14 +635,6 @@ static const u32 llcc_v6_reg_offset[] = {
 	[LLCC_TRP_WRS_CACHEABLE_EN]	= 0x00042088,
 };
 
-static const struct llcc_slice_config sdxpinn_data[] = {
-	{LLCC_MDMHPGRW,     25,  128, 1, 1,      0xC, 0x0, 0, 0x0, 0, 0, 0, 0},
-	{LLCC_MODHW,        26,  128, 1, 1,      0xC, 0x0, 0, 0x0, 0, 0, 0, 0},
-	{LLCC_MODPE,        29,   64, 1, 1,      0xC, 0x0, 0, 0x0, 0, 0, 0, 0},
-	{LLCC_APTCM,        30,  128, 3, 1,      0x0, 0x1, 1, 0x0, 1, 0, 0, 0},
-	{LLCC_MDMCLAD2,     20,  128, 1, 1,      0x3, 0x0, 0, 0x0, 0, 0, 0, 0},
-};
-
 static const struct qcom_llcc_config sc7180_cfg = {
 	.sct_data	= sc7180_data,
 	.size		= ARRAY_SIZE(sc7180_data),
@@ -912,51 +748,12 @@ static const struct qcom_llcc_config sun_cfg = {
 	.edac_reg_offset = &llcc_v6_edac_reg_offset,
 };
 
-static const struct qcom_llcc_config sm6150_cfg = {
-	.sct_data       = sm6150_data,
-	.size           = ARRAY_SIZE(sm6150_data),
-	.need_llcc_cfg  = true,
-	.reg_offset     = llcc_v1_reg_offset,
-	.edac_reg_offset = &llcc_v1_edac_reg_offset,
-};
-
-static const struct qcom_llcc_config tuna_cfg = {
-	.sct_data = tuna_data,
-	.size = ARRAY_SIZE(tuna_data),
-	.need_llcc_cfg = true,
-	.reg_offset = llcc_v6_reg_offset,
-	.edac_reg_offset = &llcc_v6_edac_reg_offset,
-};
-
-static const struct qcom_llcc_config tuna7_cfg = {
-	.sct_data = tuna7_data,
-	.size = ARRAY_SIZE(tuna7_data),
-	.need_llcc_cfg = true,
-	.reg_offset = llcc_v6_reg_offset,
-	.edac_reg_offset = &llcc_v6_edac_reg_offset,
-};
-
-static const struct qcom_llcc_config kera_cfg = {
-	.sct_data       = kera_data,
-	.size           = ARRAY_SIZE(kera_data),
-	.need_llcc_cfg  = true,
-	.reg_offset     = llcc_v6_reg_offset,
-	.edac_reg_offset = &llcc_v6_edac_reg_offset,
-};
-
 static const struct qcom_llcc_config x1e80100_cfg = {
 		.sct_data	= x1e80100_data,
 		.size		= ARRAY_SIZE(x1e80100_data),
 		.need_llcc_cfg	= true,
 		.reg_offset	= llcc_v2_1_reg_offset,
 		.edac_reg_offset = &llcc_v2_1_edac_reg_offset,
-};
-
-static const struct qcom_llcc_config sdxpinn_cfg = {
-	.sct_data   = sdxpinn_data,
-	.size       = ARRAY_SIZE(sdxpinn_data),
-	.need_llcc_cfg  = true,
-	.reg_offset = llcc_v2_1_reg_offset,
 };
 
 static struct llcc_drv_data *drv_data = (void *) -EPROBE_DEFER;
@@ -1004,7 +801,6 @@ EXPORT_SYMBOL_GPL(llcc_slice_putd);
 static int llcc_update_act_ctrl(u32 sid,
 				u32 act_ctrl_reg_val, u32 status)
 {
-	struct regmap *regmap;
 	u32 act_ctrl_reg;
 	u32 act_clear_reg;
 	u32 status_reg;
@@ -1033,8 +829,7 @@ static int llcc_update_act_ctrl(u32 sid,
 		return ret;
 
 	if (drv_data->version >= LLCC_VERSION_4_1_0_0) {
-		regmap = drv_data->bcast_and_regmap ?: drv_data->bcast_regmap;
-		ret = regmap_read_poll_timeout(regmap, status_reg,
+		ret = regmap_read_poll_timeout(drv_data->bcast_and_regmap, status_reg,
 				      slice_status, (slice_status & ACT_COMPLETE),
 				      0, LLCC_STATUS_READ_DELAY);
 		if (ret)
@@ -1750,17 +1545,10 @@ static int qcom_llcc_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	/* Applicable only when drv_data->version >= 4.1 */
-	if (drv_data->version >= LLCC_VERSION_4_1_0_0) {
-		drv_data->bcast_and_regmap = qcom_llcc_init_mmio(pdev, i+1,
-							"llcc_broadcast_and_base");
-		if (IS_ERR(drv_data->bcast_and_regmap)) {
-			ret = PTR_ERR(drv_data->bcast_and_regmap);
-			if (ret == -EINVAL)
-				drv_data->bcast_and_regmap = NULL;
-			else
-				goto err;
-		}
+	drv_data->bcast_and_regmap = qcom_llcc_init_mmio(pdev, i+1, "llcc_broadcast_and_base");
+	if (IS_ERR(drv_data->bcast_and_regmap)) {
+		ret = PTR_ERR(drv_data->bcast_and_regmap);
+		goto err;
 	}
 
 	/* Extract version of the IP */
@@ -1841,12 +1629,7 @@ static const struct of_device_id qcom_llcc_of_match[] = {
 	{ .compatible = "qcom,sm8550-llcc", .data = &sm8550_cfg },
 	{ .compatible = "qcom,pineapple-llcc", .data = &pineapple_cfg },
 	{ .compatible = "qcom,sun-llcc", .data = &sun_cfg },
-	{ .compatible = "qcom,tuna-llcc", .data = &tuna_cfg },
-	{ .compatible = "qcom,tuna7-llcc", .data = &tuna7_cfg },
-	{ .compatible = "qcom,kera-llcc", .data = &kera_cfg },
 	{ .compatible = "qcom,x1e80100-llcc", .data = &x1e80100_cfg },
-	{ .compatible = "qcom,sdxpinn-llcc", .data = &sdxpinn_cfg },
-	{ .compatible = "qcom,sm6150-llcc", .data = &sm6150_cfg },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, qcom_llcc_of_match);

@@ -403,29 +403,12 @@ static struct qcom_cc_desc eva_cc_sun_desc = {
 
 static const struct of_device_id eva_cc_sun_match_table[] = {
 	{ .compatible = "qcom,sun-evacc" },
-	{ .compatible = "qcom,sun-evacc-v2" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, eva_cc_sun_match_table);
 
-static int eva_cc_sun_fixup(struct platform_device *pdev, struct regmap *regmap)
-{
-	const char *compat = NULL;
-	int compatlen = 0;
-
-	compat = of_get_property(pdev->dev.of_node, "compatible", &compatlen);
-	if (!compat || compatlen <= 0)
-		return -EINVAL;
-
-	if (!strcmp(compat, "qcom,sun-evacc-v2"))
-		regmap_update_bits(regmap, 0x9f24, BIT(0), BIT(0));
-
-	return 0;
-}
-
 static int eva_cc_sun_probe(struct platform_device *pdev)
 {
-	unsigned int dly_accu_mask = 0x1f << 21;
 	struct regmap *regmap;
 	int ret;
 
@@ -443,17 +426,6 @@ static int eva_cc_sun_probe(struct platform_device *pdev)
 
 	clk_taycan_elu_pll_configure(&eva_cc_pll0, regmap, &eva_cc_pll0_config);
 
-	/*
-	 * Maximize ctl data download delay and enable memory redundancy:
-	 * MVS0C_CFG3
-	 * MVS0_CFG3
-	 */
-	regmap_update_bits(regmap, 0x8040, dly_accu_mask, dly_accu_mask);
-	regmap_update_bits(regmap, 0x8074, dly_accu_mask, dly_accu_mask);
-
-	ret = eva_cc_sun_fixup(pdev, regmap);
-	if (ret)
-		return ret;
 	/*
 	 * Keep clocks always enabled:
 	 *	eva_cc_ahb_clk

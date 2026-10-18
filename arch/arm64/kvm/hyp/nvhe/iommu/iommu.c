@@ -515,7 +515,7 @@ int kvm_iommu_map_pages(pkvm_handle_t domain_id, unsigned long iova,
 	 * so far.
 	 */
 	if (pgcount)
-		__pkvm_host_unuse_dma(paddr + total_mapped, pgcount * pgsize);
+		__pkvm_host_unuse_dma(paddr, pgcount * pgsize);
 
 	*mapped = total_mapped;
 
@@ -665,13 +665,13 @@ static int iommu_power_on(struct kvm_power_domain *pd)
 	bool prev;
 	int ret;
 
-	kvm_iommu_lock(iommu);
+	hyp_spin_lock(&iommu->lock);
 	prev = iommu->power_is_off;
 	iommu->power_is_off = false;
 	ret = kvm_iommu_ops->resume ? kvm_iommu_ops->resume(iommu) : 0;
 	if (ret)
 		iommu->power_is_off = prev;
-	kvm_iommu_unlock(iommu);
+	hyp_spin_unlock(&iommu->lock);
 	return ret;
 }
 
@@ -682,13 +682,13 @@ static int iommu_power_off(struct kvm_power_domain *pd)
 	bool prev;
 	int ret;
 
-	kvm_iommu_lock(iommu);
+	hyp_spin_lock(&iommu->lock);
 	prev = iommu->power_is_off;
 	iommu->power_is_off = true;
 	ret = kvm_iommu_ops->suspend ? kvm_iommu_ops->suspend(iommu) : 0;
 	if (ret)
 		iommu->power_is_off = prev;
-	kvm_iommu_unlock(iommu);
+	hyp_spin_unlock(&iommu->lock);
 	return ret;
 }
 
@@ -699,7 +699,8 @@ static const struct kvm_power_domain_ops iommu_power_ops = {
 
 int kvm_iommu_init_device(struct kvm_hyp_iommu *iommu)
 {
-	kvm_iommu_lock_init(iommu);
+	/* See struct kvm_hyp_iommu */
+	BUILD_BUG_ON(sizeof(u32) != sizeof(hyp_spinlock_t));
 
 	return pkvm_init_power_domain(&iommu->power_domain, &iommu_power_ops);
 }
@@ -823,30 +824,5 @@ int kvm_iommu_snapshot_host_stage2(struct kvm_hyp_iommu_domain *domain)
 		kvm_iommu_idmap_init_done();
 	hyp_spin_unlock(&host_mmu.lock);
 
-	return ret;
-}
-
-int kvm_iommu_iotlb_sync_map(pkvm_handle_t domain_id,
-			     unsigned long iova, size_t size)
-{
-	struct kvm_hyp_iommu_domain *domain;
-	int ret;
-
-	if (!kvm_iommu_ops || !kvm_iommu_ops->iotlb_sync_map)
-		return -ENODEV;
-
-	if (!size || (iova + size < iova))
-		return -EINVAL;
-
-	if (domain_id == KVM_IOMMU_DOMAIN_IDMAP_ID)
-		return -EINVAL;
-
-	domain = handle_to_domain(domain_id);
-
-	if (!domain || domain_get(domain))
-		return -EINVAL;
-
-	ret = kvm_iommu_ops->iotlb_sync_map(domain, iova, size);
-	domain_put(domain);
 	return ret;
 }

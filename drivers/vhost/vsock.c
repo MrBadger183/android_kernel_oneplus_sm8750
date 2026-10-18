@@ -114,7 +114,6 @@ vhost_transport_do_send_pkt(struct vhost_vsock *vsock,
 		struct sk_buff *skb;
 		unsigned out, in;
 		size_t nbytes;
-		u32 offset;
 		int head;
 
 		skb = virtio_vsock_skb_dequeue(&vsock->send_pkt_queue);
@@ -157,8 +156,7 @@ vhost_transport_do_send_pkt(struct vhost_vsock *vsock,
 		}
 
 		iov_iter_init(&iov_iter, ITER_DEST, &vq->iov[out], in, iov_len);
-		offset = VIRTIO_VSOCK_SKB_CB(skb)->offset;
-		payload_len = skb->len - offset;
+		payload_len = skb->len;
 		hdr = virtio_vsock_hdr(skb);
 
 		/* If the packet is greater than the space available in the
@@ -199,10 +197,8 @@ vhost_transport_do_send_pkt(struct vhost_vsock *vsock,
 			break;
 		}
 
-		if (skb_copy_datagram_iter(skb,
-					   offset,
-					   &iov_iter,
-					   payload_len)) {
+		nbytes = copy_to_iter(skb->data, payload_len, &iov_iter);
+		if (nbytes != payload_len) {
 			kfree_skb(skb);
 			vq_err(vq, "Faulted on copying pkt buf\n");
 			break;
@@ -216,13 +212,13 @@ vhost_transport_do_send_pkt(struct vhost_vsock *vsock,
 		vhost_add_used(vq, head, sizeof(*hdr) + payload_len);
 		added = true;
 
-		VIRTIO_VSOCK_SKB_CB(skb)->offset += payload_len;
+		skb_pull(skb, payload_len);
 		total_len += payload_len;
 
 		/* If we didn't send all the payload we can requeue the packet
 		 * to send it with the next available buffer.
 		 */
-		if (VIRTIO_VSOCK_SKB_CB(skb)->offset < skb->len) {
+		if (skb->len > 0) {
 			hdr->flags |= cpu_to_le32(flags_to_restore);
 
 			/* We are queueing the same skb to handle
@@ -344,10 +340,6 @@ vhost_vsock_alloc_skb(struct vhost_virtqueue *vq,
 
 	len = iov_length(vq->iov, out);
 
-	if (len < VIRTIO_VSOCK_SKB_HEADROOM ||
-	    len > VIRTIO_VSOCK_MAX_PKT_BUF_SIZE + VIRTIO_VSOCK_SKB_HEADROOM)
-		return NULL;
-
 	/* len contains both payload and hdr */
 	skb = virtio_vsock_alloc_skb(len, GFP_KERNEL);
 	if (!skb)
@@ -371,15 +363,18 @@ vhost_vsock_alloc_skb(struct vhost_virtqueue *vq,
 		return skb;
 
 	/* The pkt is too big or the length in the header is invalid */
-	if (payload_len + sizeof(*hdr) > len) {
+	if (payload_len > VIRTIO_VSOCK_MAX_PKT_BUF_SIZE ||
+	    payload_len + sizeof(*hdr) > len) {
 		kfree_skb(skb);
 		return NULL;
 	}
 
-	virtio_vsock_skb_put(skb, payload_len);
+	virtio_vsock_skb_rx_put(skb);
 
-	if (skb_copy_datagram_from_iter(skb, 0, &iov_iter, payload_len)) {
-		vq_err(vq, "Failed to copy %zu byte payload\n", payload_len);
+	nbytes = copy_from_iter(skb->data, payload_len, &iov_iter);
+	if (nbytes != payload_len) {
+		vq_err(vq, "Expected %zu byte payload, got %zu bytes\n",
+		       payload_len, nbytes);
 		kfree_skb(skb);
 		return NULL;
 	}

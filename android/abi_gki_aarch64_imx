@@ -170,8 +170,6 @@
   clk_notifier_unregister
   clk_prepare
   clk_put
-  clk_rate_exclusive_get
-  clk_rate_exclusive_put
   clk_round_rate
   clk_set_parent
   clk_set_rate
@@ -468,7 +466,6 @@
   __devm_spi_alloc_controller
   devm_spi_mem_dirmap_create
   devm_spi_register_controller
-  devm_tegra_memory_controller_get
   devm_thermal_of_zone_register
   devm_usb_get_phy
   devm_usb_get_phy_by_phandle
@@ -477,12 +474,9 @@
   dev_open
   dev_pm_domain_attach_by_id
   dev_pm_domain_attach_by_name
-  dev_pm_domain_attach_list
   dev_pm_domain_detach
-  dev_pm_domain_detach_list
   dev_pm_genpd_add_notifier
   dev_pm_genpd_remove_notifier
-  dev_pm_genpd_set_performance_state
   dev_pm_opp_add_dynamic
   dev_pm_opp_clear_config
   dev_pm_opp_find_freq_ceil
@@ -852,7 +846,6 @@
   drm_vblank_init
   drop_reasons_register_subsys
   drop_reasons_unregister_subsys
-  dummy_irq_chip
   dump_stack
   dw_pcie_ep_init
   dw_pcie_ep_raise_legacy_irq
@@ -1191,8 +1184,6 @@
   irq_dispose_mapping
   __irq_domain_add
   irq_domain_add_legacy
-  __irq_domain_alloc_fwnode
-  irq_domain_free_fwnode
   irq_domain_get_irq_data
   irq_domain_remove
   irq_domain_set_info
@@ -1634,7 +1625,6 @@
   open_candev
   orderly_poweroff
   orderly_reboot
-  overflowuid
   page_pinner_inited
   __page_pinner_put_page
   page_pool_alloc_pages
@@ -1645,7 +1635,6 @@
   panic_notifier_list
   param_array_ops
   param_get_int
-  param_get_uint
   param_ops_bool
   param_ops_byte
   param_ops_charp
@@ -1655,7 +1644,6 @@
   param_ops_ullong
   param_ops_ulong
   param_ops_ushort
-  param_set_uint_minmax
   pci_alloc_irq_vectors
   pci_ats_supported
   pci_bus_type
@@ -1726,7 +1714,6 @@
   phy_ethtool_set_link_ksettings
   phy_ethtool_set_wol
   phy_exit
-  phy_get_pause
   phy_init
   phy_init_eee
   phy_init_hw
@@ -1837,7 +1824,6 @@
   __platform_driver_probe
   __platform_driver_register
   platform_driver_unregister
-  platform_get_ethdev_address
   platform_get_irq
   platform_get_irq_byname
   platform_get_irq_byname_optional
@@ -2615,26 +2601,6 @@
   usb_hcd_map_urb_for_dma
   usb_hcd_unmap_urb_for_dma
   usb_initialize_gadget
-  usbnet_change_mtu
-  usbnet_defer_kevent
-  usbnet_disconnect
-  usbnet_get_drvinfo
-  usbnet_get_endpoints
-  usbnet_get_msglevel
-  usbnet_open
-  usbnet_probe
-  usbnet_read_cmd
-  usbnet_read_cmd_nopm
-  usbnet_resume
-  usbnet_set_msglevel
-  usbnet_skb_return
-  usbnet_start_xmit
-  usbnet_stop
-  usbnet_suspend
-  usbnet_tx_timeout
-  usbnet_write_cmd
-  usbnet_write_cmd_async
-  usbnet_write_cmd_nopm
   usb_phy_set_charger_current
   usb_phy_set_charger_state
   usb_phy_set_event
@@ -2849,7 +2815,6 @@
   vring_del_virtqueue
   vring_interrupt
   vring_new_virtqueue
-  vscnprintf
   vsnprintf
   vunmap
   vzalloc

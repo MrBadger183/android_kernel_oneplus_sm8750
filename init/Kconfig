@@ -878,6 +878,10 @@ config UCLAMP_BUCKETS_COUNT
 
 	  If in doubt, use the default value.
 
+#ifdef OPLUS_FEATURE_CPU
+source "kernel/oplus_cpu/Kconfig"
+#endif /* OPLUS_FEATURE_CPU */
+
 endmenu
 
 #
@@ -1050,6 +1054,10 @@ config RT_GROUP_SCHED
 	  realtime bandwidth for them.
 	  See Documentation/scheduler/sched-rt-group.rst for more information.
 
+config EXT_GROUP_SCHED
+	bool
+	depends on SCHED_CLASS_EXT && CGROUP_SCHED
+	default y
 endif #CGROUP_SCHED
 
 config SCHED_MM_CID
@@ -2039,5 +2047,5 @@ config ARCH_HAS_SYSCALL_WRAPPER
 
 if 64BIT
 source "init/Kconfig.gki"
-endif
 source "init/Kconfig.gki-debug"
+endif

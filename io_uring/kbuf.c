@@ -148,7 +148,8 @@ static void __user *io_ring_buffer_select(struct io_kiocb *req, size_t *len,
 	req->buf_list = bl;
 	req->buf_index = buf->bid;
 
-	if (issue_flags & IO_URING_F_UNLOCKED || !io_file_can_poll(req)) {
+	if (issue_flags & IO_URING_F_UNLOCKED ||
+	    (req->file && !file_can_poll(req->file))) {
 		/*
 		 * If we came in unlocked, we have no choice but to consume the
 		 * buffer here, otherwise nothing ensures that the buffer won't
@@ -560,7 +561,7 @@ int io_register_pbuf_ring(struct io_ring_ctx *ctx, void __user *arg)
 		io_destroy_bl(ctx, bl);
 	}
 
-	free_bl = bl = kzalloc(sizeof(*bl), GFP_KERNEL_ACCOUNT);
+	free_bl = bl = kzalloc(sizeof(*bl), GFP_KERNEL);
 	if (!bl)
 		return -ENOMEM;
 

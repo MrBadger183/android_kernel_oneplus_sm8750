@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2015, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -20,7 +20,6 @@
 
 #include "cqhci.h"
 #include "cqhci-crypto.h"
-#include "cqhci-crypto-qti.h"
 
 #define DCMD_SLOT 31
 #define NUM_SLOTS 32
@@ -283,8 +282,6 @@ static void __cqhci_enable(struct cqhci_host *cq_host)
 		     CQHCI_TDLBAU);
 
 	cqhci_writel(cq_host, cq_host->rca, CQHCI_SSC2);
-
-	cqhci_writel(cq_host, SEND_QSR_INTERVAL, CQHCI_SSC1);
 
 	cqhci_set_irqs(cq_host, 0);
 
@@ -1227,11 +1224,7 @@ int cqhci_init(struct cqhci_host *cq_host, struct mmc_host *mmc,
 		goto out_err;
 	}
 
-#if IS_ENABLED(CONFIG_MMC_CRYPTO_QTI)
-	err = cqhci_qti_crypto_init(cq_host);
-#else
 	err = cqhci_crypto_init(cq_host);
-#endif
 	if (err) {
 		pr_err("%s: CQHCI crypto initialization failed\n",
 		       mmc_hostname(mmc));

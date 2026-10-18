@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -1694,8 +1694,6 @@ static struct qcom_icc_node qns_mem_noc_hf = {
 	.id = SLAVE_MNOC_HF_MEM_NOC,
 	.channels = 2,
 	.buswidth = 32,
-	.init_peak = INT_MAX,
-	.init_avg  = INT_MAX,
 	.noc_ops = &qcom_qnoc4_ops,
 	.num_links = 1,
 	.links = { MASTER_MNOC_HF_MEM_NOC },
@@ -1888,17 +1886,18 @@ static struct qcom_icc_bcm bcm_mc0 = {
 static struct qcom_icc_bcm bcm_mm0 = {
 	.name = "MM0",
 	.voter_idx = 0,
-	.num_nodes = 2,
-	.nodes = { &qns_mem_noc_hf, &qnm_mdp },
+	.keepalive_early = true,
+	.num_nodes = 1,
+	.nodes = { &qns_mem_noc_hf },
 };
 
 static struct qcom_icc_bcm bcm_mm1 = {
 	.name = "MM1",
 	.voter_idx = 0,
 	.enable_mask = 0x1,
-	.num_nodes = 7,
+	.num_nodes = 8,
 	.nodes = { &qnm_camnoc_hf, &qnm_camnoc_icp,
-		   &qnm_camnoc_sf,
+		   &qnm_camnoc_sf, &qnm_mdp,
 		   &qnm_mnoc_cfg, &qnm_video0,
 		   &qnm_video_cpu, &qns_mem_noc_sf },
 };
@@ -1906,7 +1905,7 @@ static struct qcom_icc_bcm bcm_mm1 = {
 static struct qcom_icc_bcm bcm_qup0 = {
 	.name = "QUP0",
 	.voter_idx = 0,
-	.keepalive = true,
+	.keepalive_early = true,
 	.vote_scale = 1,
 	.num_nodes = 1,
 	.nodes = { &qup0_core_slave },
@@ -1915,7 +1914,7 @@ static struct qcom_icc_bcm bcm_qup0 = {
 static struct qcom_icc_bcm bcm_qup1 = {
 	.name = "QUP1",
 	.voter_idx = 0,
-	.keepalive = true,
+	.keepalive_early = true,
 	.vote_scale = 1,
 	.num_nodes = 1,
 	.nodes = { &qup1_core_slave },
@@ -2004,8 +2003,16 @@ static struct qcom_icc_bcm bcm_mc0_disp = {
 static struct qcom_icc_bcm bcm_mm0_disp = {
 	.name = "MM0",
 	.voter_idx = 1,
-	.num_nodes = 2,
-	.nodes = { &qns_mem_noc_hf_disp, &qnm_mdp_disp },
+	.num_nodes = 1,
+	.nodes = { &qns_mem_noc_hf_disp },
+};
+
+static struct qcom_icc_bcm bcm_mm1_disp = {
+	.name = "MM1",
+	.voter_idx = 1,
+	.enable_mask = 0x1,
+	.num_nodes = 1,
+	.nodes = { &qnm_mdp_disp },
 };
 
 static struct qcom_icc_bcm bcm_sh0_disp = {
@@ -2314,6 +2321,7 @@ static struct qcom_icc_bcm *mmss_noc_bcms[] = {
 	&bcm_mm0,
 	&bcm_mm1,
 	&bcm_mm0_disp,
+	&bcm_mm1_disp,
 };
 
 static struct qcom_icc_node *mmss_noc_nodes[] = {

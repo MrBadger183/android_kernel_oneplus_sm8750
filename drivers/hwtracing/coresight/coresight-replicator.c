@@ -304,7 +304,6 @@ static int replicator_add_coresight_dev(struct device *dev, struct resource *res
 		dev_err(dev, "atclk is NULL\n");
 		return -EPROBE_DEFER;
 	}
-
 	if (!IS_ERR(drvdata->atclk)) {
 		ret = clk_prepare_enable(drvdata->atclk);
 		if (ret)

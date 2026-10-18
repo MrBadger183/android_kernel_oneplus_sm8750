@@ -29,6 +29,8 @@
 #include <linux/pm_qos.h>
 #include <linux/units.h>
 #include "governor.h"
+#include "adreno_idler.h"
+#include "adreno_boost.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/devfreq.h>
@@ -416,6 +418,17 @@ int devfreq_update_target(struct devfreq *devfreq, unsigned long freq)
 	if (err)
 		return err;
 	devfreq_get_freq_range(devfreq, &min_freq, &max_freq);
+
+	/* Adreno GPU optimizations (Adreno Boost & Adreno Idler) */
+	if ((devfreq->governor && !strcmp(devfreq->governor->name, "msm-adreno-tz")) ||
+	    (devfreq->dev.parent && devfreq->dev.parent->of_node &&
+	     of_device_is_compatible(devfreq->dev.parent->of_node, "qcom,kgsl-3d0")) ||
+	    (devfreq->dev.parent && strstr(dev_name(devfreq->dev.parent), "kgsl"))) {
+		if (adrenoboost > 0)
+			adreno_boost_eval(devfreq, &freq);
+		else if (adreno_idler_active)
+			adreno_idler_eval(devfreq, &freq, min_freq);
+	}
 
 	if (freq < min_freq) {
 		freq = min_freq;
@@ -1382,11 +1395,15 @@ int devfreq_remove_governor(struct devfreq_governor *governor)
 		int ret;
 		struct device *dev = devfreq->dev.parent;
 
-		if (!devfreq->governor)
-			continue;
-
 		if (!strncmp(devfreq->governor->name, governor->name,
 			     DEVFREQ_NAME_LEN)) {
+			/* we should have a devfreq governor! */
+			if (!devfreq->governor) {
+				dev_warn(dev, "%s: Governor %s NOT present\n",
+					 __func__, governor->name);
+				continue;
+				/* Fall through */
+			}
 			ret = devfreq->governor->event_handler(devfreq,
 						DEVFREQ_GOV_STOP, NULL);
 			if (ret) {
@@ -1803,6 +1820,115 @@ static ssize_t trans_stat_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(trans_stat);
 
+static ssize_t adreno_idler_active_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", adreno_idler_active ? 1 : 0);
+}
+
+static ssize_t adreno_idler_active_store(struct device *dev,
+					 struct device_attribute *attr,
+					 const char *buf, size_t count)
+{
+	int ret;
+	bool val;
+
+	ret = kstrtobool(buf, &val);
+	if (ret)
+		return ret;
+
+	adreno_idler_active = val;
+	return count;
+}
+static DEVICE_ATTR_RW(adreno_idler_active);
+
+static ssize_t idle_wait_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", adreno_idler_idlewait);
+}
+
+static ssize_t idle_wait_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	adreno_idler_idlewait = val;
+	return count;
+}
+static DEVICE_ATTR_RW(idle_wait);
+
+static ssize_t idle_workload_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", adreno_idler_idleworkload);
+}
+
+static ssize_t idle_workload_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	adreno_idler_idleworkload = val;
+	return count;
+}
+static DEVICE_ATTR_RW(idle_workload);
+
+static ssize_t adrenoboost_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", adrenoboost);
+}
+
+static ssize_t adrenoboost_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > 3)
+		val = 3;
+
+	adrenoboost = val;
+	return count;
+}
+static DEVICE_ATTR_RW(adrenoboost);
+
+static struct device_attribute dev_attr_adreno_boost = {
+	.attr = { .name = "adreno_boost", .mode = 0644 },
+	.show = adrenoboost_show,
+	.store = adrenoboost_store,
+};
+
+static struct device_attribute dev_attr_adreno_idler_idlewait = {
+	.attr = { .name = "adreno_idler_idlewait", .mode = 0644 },
+	.show = idle_wait_show,
+	.store = idle_wait_store,
+};
+
+static struct device_attribute dev_attr_adreno_idler_idleworkload = {
+	.attr = { .name = "adreno_idler_idleworkload", .mode = 0644 },
+	.show = idle_workload_show,
+	.store = idle_workload_store,
+};
+
 static struct attribute *devfreq_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_governor.attr,
@@ -1813,6 +1939,13 @@ static struct attribute *devfreq_attrs[] = {
 	&dev_attr_min_freq.attr,
 	&dev_attr_max_freq.attr,
 	&dev_attr_trans_stat.attr,
+	&dev_attr_adreno_idler_active.attr,
+	&dev_attr_idle_wait.attr,
+	&dev_attr_idle_workload.attr,
+	&dev_attr_adreno_idler_idlewait.attr,
+	&dev_attr_adreno_idler_idleworkload.attr,
+	&dev_attr_adrenoboost.attr,
+	&dev_attr_adreno_boost.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(devfreq);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2020, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -39,7 +39,7 @@ struct qcom_dload {
 
 #define QCOM_DOWNLOAD_BOTHDUMP (QCOM_DOWNLOAD_FULLDUMP | QCOM_DOWNLOAD_MINIDUMP)
 
-static int enable_dump =
+static bool enable_dump =
 	IS_ENABLED(CONFIG_POWER_RESET_QCOM_DOWNLOAD_MODE_DEFAULT);
 static enum qcom_download_mode current_download_mode = QCOM_DOWNLOAD_NODUMP;
 static enum qcom_download_mode dump_mode = QCOM_DOWNLOAD_FULLDUMP;
@@ -74,6 +74,12 @@ static int set_dump_mode(enum qcom_download_mode mode)
 	return ret;
 }
 
+int get_dump_mode(void)
+{
+	return dump_mode;
+}
+EXPORT_SYMBOL_GPL(get_dump_mode);
+
 static void msm_enable_dump_mode(bool enable)
 {
 	if (enable)
@@ -102,13 +108,11 @@ static int param_set_download_mode(const char *val,
 	int ret;
 
 	/* update enable_dump according to user input */
-	ret = param_set_int(val, kp);
+	ret = param_set_bool(val, kp);
 	if (ret)
 		return ret;
 
-	msm_enable_dump_mode(enable_dump);
-	if (!enable_dump)
-		qcom_scm_disable_sdi();
+	msm_enable_dump_mode(true);
 
 	return 0;
 }
@@ -316,9 +320,6 @@ static int qcom_dload_probe(struct platform_device *pdev)
 {
 	struct qcom_dload *poweroff;
 	int ret, temp;
-
-	if (IS_ENABLED(CONFIG_QCOM_MINIDUMP) && !msm_minidump_enabled())
-		return -EPROBE_DEFER;
 
 	poweroff = devm_kzalloc(&pdev->dev, sizeof(*poweroff), GFP_KERNEL);
 	if (!poweroff)

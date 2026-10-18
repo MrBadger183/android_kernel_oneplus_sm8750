@@ -21,7 +21,6 @@ qcom_ice.ko
 qcom_hwspinlock.ko
 phy-qcom-ufs.ko
 debug_symbol.ko
-qpnp-power-on.ko
 qcom-reboot-reason.ko
 qcom_soc_wdt.ko
 qcom_wdt_core.ko
@@ -31,8 +30,10 @@ cpu_phys_log_map.ko
 qcom_cpu_vendor_hooks.ko
 pinctrl-monaco.ko
 qcom_iommu_util.ko
+ufs-qcom.ko
 qcom-pdc.ko
 socinfo.ko
+ufshcd-crypto-qti.ko
 smem.ko
 rtc-pm8xxx.ko
 rpm-smd-regulator.ko
@@ -60,8 +61,3 @@ qnoc-qos-rpm.ko
 spmi-pmic-arb.ko
 regmap-spmi.ko
 nvmem_qcom-spmi-sdam.ko
-cqhci-crypto-qti.ko
-minidump.ko
-crypto-qti-common.ko
-crypto-qti-hwkm.ko
-hwkm_v1.ko

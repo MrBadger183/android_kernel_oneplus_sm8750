@@ -35,7 +35,10 @@ void qcom_glink_smem_unregister(struct qcom_glink_smem *glink);
 int qcom_glink_smem_start(struct qcom_glink_smem *glink);
 bool qcom_glink_is_wakeup(bool reset);
 void qcom_glink_early_ssr_notify(void *data);
+#if 1
+/* Merge CR3964917 for fix ALM[8638837] */
 void qcom_glink_smem_early_ssr_notify(void *data);
+#endif
 
 #else
 
@@ -48,7 +51,10 @@ qcom_glink_smem_register(struct device *parent,
 
 static inline void qcom_glink_smem_unregister(struct qcom_glink_smem *glink) {}
 static inline void qcom_glink_early_ssr_notify(void *data) {}
+#if 1
+/* Merge CR3964917 for fix ALM[8638837] */
 static inline void qcom_glink_smem_early_ssr_notify(void *data) {}
+#endif
 
 int qcom_glink_smem_start(struct qcom_glink_smem *glink)
 {

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -656,7 +655,7 @@ static int parse_xfer_event(struct mhi_controller *mhi_cntrl,
 	{
 		dma_addr_t ptr = MHI_TRE_GET_EV_PTR(event);
 		struct mhi_ring_element *local_rp, *ev_tre;
-		void *dev_rp, *next_rp;
+		void *dev_rp;
 		struct mhi_buf_info *buf_info;
 		u16 xfer_len;
 
@@ -675,16 +674,6 @@ static int parse_xfer_event(struct mhi_controller *mhi_cntrl,
 		result.dir = mhi_chan->dir;
 
 		local_rp = tre_ring->rp;
-
-		next_rp = local_rp + 1;
-		if (next_rp >= tre_ring->base + tre_ring->len)
-			next_rp = tre_ring->base;
-		if (dev_rp != next_rp && !MHI_TRE_DATA_GET_CHAIN(local_rp)) {
-			dev_err(&mhi_cntrl->mhi_dev->dev,
-				"Event element points to an unexpected TRE\n");
-			break;
-		}
-
 		while (local_rp != dev_rp) {
 			buf_info = buf_ring->rp;
 			/* If it's the last TRE, get length from the event */
@@ -1128,13 +1117,14 @@ int mhi_process_data_event_ring(struct mhi_controller *mhi_cntrl,
 
 void mhi_ev_task(unsigned long data)
 {
+	unsigned long flags;
 	struct mhi_event *mhi_event = (struct mhi_event *)data;
 	struct mhi_controller *mhi_cntrl = mhi_event->mhi_cntrl;
 
 	/* process all pending events */
-	spin_lock_bh(&mhi_event->lock);
+	spin_lock_irqsave(&mhi_event->lock, flags);
 	mhi_event->process_event(mhi_cntrl, mhi_event, U32_MAX);
-	spin_unlock_bh(&mhi_event->lock);
+	spin_unlock_irqrestore(&mhi_event->lock, flags);
 }
 
 void mhi_ctrl_ev_task(unsigned long data)
@@ -1787,19 +1777,11 @@ EXPORT_SYMBOL_GPL(mhi_prepare_for_transfer_autoqueue);
 void mhi_unprepare_from_transfer(struct mhi_device *mhi_dev)
 {
 	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
-	struct device *dev = &mhi_dev->dev;
 	struct mhi_chan *mhi_chan;
 	int dir;
 
 	/* Get out of suspended state */
-	if (mhi_cntrl->runtime_get_sync) {
-		MHI_VERB(dev, "Calling runtime_get_sync()\n");
-		mhi_cntrl->runtime_get_sync(mhi_cntrl);
-	} else {
-		MHI_VERB(dev, "Calling runtime_get()\n");
-		mhi_cntrl->runtime_get(mhi_cntrl);
-	}
-
+	mhi_cntrl->runtime_get(mhi_cntrl);
 	for (dir = 0; dir < 2; dir++) {
 		mhi_chan = dir ? mhi_dev->ul_chan : mhi_dev->dl_chan;
 		if (!mhi_chan)
@@ -1807,15 +1789,8 @@ void mhi_unprepare_from_transfer(struct mhi_device *mhi_dev)
 
 		mhi_unprepare_channel(mhi_cntrl, mhi_chan);
 	}
-
 	/* Allow suspend */
-	if (mhi_cntrl->runtime_put_autosuspend) {
-		MHI_VERB(dev, "Calling runtime_put_autosuspend()\n");
-		mhi_cntrl->runtime_put_autosuspend(mhi_cntrl);
-	} else {
-		MHI_VERB(dev, "Calling runtime_put()\n");
-		mhi_cntrl->runtime_put(mhi_cntrl);
-	}
+	mhi_cntrl->runtime_put(mhi_cntrl);
 }
 EXPORT_SYMBOL_GPL(mhi_unprepare_from_transfer);
 

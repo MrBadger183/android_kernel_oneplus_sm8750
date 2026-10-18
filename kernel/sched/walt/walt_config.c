@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "walt.h"
@@ -11,7 +11,6 @@ unsigned long __read_mostly soc_flags;
 unsigned int trailblazer_floor_freq[MAX_CLUSTERS];
 cpumask_t asym_cap_sibling_cpus;
 cpumask_t pipeline_sync_cpus;
-cpumask_t storage_boost_cpus;
 int oscillate_period_ns;
 int soc_sched_lib_name_capacity;
 #define PIPELINE_BUSY_THRESH_8MS_WINDOW 7
@@ -50,7 +49,6 @@ void walt_config(void)
 	sysctl_max_freq_partial_halt = FREQ_QOS_MAX_DEFAULT_VALUE;
 	asym_cap_sibling_cpus = CPU_MASK_NONE;
 	pipeline_sync_cpus = CPU_MASK_NONE;
-	storage_boost_cpus = CPU_MASK_NONE;
 	for_each_possible_cpu(cpu) {
 		for (i = 0; i < LEGACY_SMART_FREQ; i++) {
 			if (i)
@@ -102,36 +100,23 @@ void walt_config(void)
 	soc_feat_set(SOC_ENABLE_PER_TASK_BOOST_ON_MID_BIT);
 	soc_feat_set(SOC_ENABLE_COLOCATION_PLACEMENT_BOOST_BIT);
 	soc_feat_set(SOC_ENABLE_PIPELINE_SWAPPING_BIT);
-	soc_feat_set(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
-
-	sysctl_pipeline_special_task_util_thres = 100;
-	sysctl_pipeline_non_special_task_util_thres = 200;
-	sysctl_pipeline_pin_thres_low_pct = 50;
-	sysctl_pipeline_pin_thres_high_pct = 60;
-	pipeline_swap_util_th = 0;
-
-	/* Initialize smart freq configurations */
-	smart_freq_init(name);
-
 	/* return if socinfo is not available */
 	if (!name)
 		return;
 
-	if (!strcmp(name, "SUN") || !strcmp(name, "SUNP")) {
+	if (!strcmp(name, "SUN")) {
 		sysctl_sched_suppress_region2		= 1;
 		soc_feat_unset(SOC_ENABLE_CONSERVATIVE_BOOST_TOPAPP_BIT);
 		soc_feat_unset(SOC_ENABLE_CONSERVATIVE_BOOST_FG_BIT);
 		soc_feat_unset(SOC_ENABLE_UCLAMP_BOOSTED_BIT);
 		soc_feat_unset(SOC_ENABLE_PER_TASK_BOOST_ON_MID_BIT);
 		trailblazer_floor_freq[0] = 1000000;
-		debugfs_walt_features |= WALT_FEAT_TRAILBLAZER_BIT;
 		soc_feat_unset(SOC_ENABLE_COLOCATION_PLACEMENT_BOOST_BIT);
 		soc_feat_set(SOC_ENABLE_FT_BOOST_TO_ALL);
 		oscillate_period_ns = 8000000;
 		soc_feat_unset(SOC_ENABLE_EXPERIMENT3);
 		/*G + P*/
 		cpumask_copy(&pipeline_sync_cpus, cpu_possible_mask);
-		cpumask_copy(&storage_boost_cpus, cpu_possible_mask);
 		soc_sched_lib_name_capacity = 2;
 		soc_feat_unset(SOC_ENABLE_PIPELINE_SWAPPING_BIT);
 
@@ -145,8 +130,8 @@ void walt_config(void)
 		load_sync_low_pct[0][1]		= sysctl_cluster01_load_sync[1];
 		load_sync_high_pct[0][1]	= sysctl_cluster01_load_sync[2];
 		load_sync_util_thres[1][0]	= sysctl_cluster10_load_sync[0];
-		load_sync_low_pct[1][0]		= sysctl_cluster10_load_sync[1];
-		load_sync_high_pct[1][0]	= sysctl_cluster10_load_sync[2];
+		load_sync_low_pct[0][1]		= sysctl_cluster10_load_sync[1];
+		load_sync_high_pct[0][1]	= sysctl_cluster10_load_sync[2];
 
 		sysctl_cluster01_load_sync_60fps[0]	= 400;
 		sysctl_cluster01_load_sync_60fps[1]	= 60;
@@ -158,8 +143,8 @@ void walt_config(void)
 		load_sync_low_pct_60fps[0][1]		= sysctl_cluster01_load_sync_60fps[1];
 		load_sync_high_pct_60fps[0][1]		= sysctl_cluster01_load_sync_60fps[2];
 		load_sync_util_thres_60fps[1][0]	= sysctl_cluster10_load_sync_60fps[0];
-		load_sync_low_pct_60fps[1][0]		= sysctl_cluster10_load_sync_60fps[1];
-		load_sync_high_pct_60fps[1][0]		= sysctl_cluster10_load_sync_60fps[2];
+		load_sync_low_pct_60fps[0][1]		= sysctl_cluster10_load_sync_60fps[1];
+		load_sync_high_pct_60fps[0][1]		= sysctl_cluster10_load_sync_60fps[2];
 
 		/* CPU0 needs an 9mS bias for all legacy smart freq reasons */
 		for (i = 1; i < LEGACY_SMART_FREQ; i++)
@@ -172,7 +157,6 @@ void walt_config(void)
 			smart_freq_legacy_reason_hyst_ms[PIPELINE_60FPS_OR_LESSER_SMART_FREQ][cpu] =
 				1;
 		}
-		soc_feat_unset(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
 	} else if (!strcmp(name, "PINEAPPLE")) {
 		soc_feat_set(SOC_ENABLE_SILVER_RT_SPREAD_BIT);
 		soc_feat_set(SOC_ENABLE_BOOST_TO_NEXT_CLUSTER_BIT);
@@ -183,9 +167,6 @@ void walt_config(void)
 		cpumask_or(&asym_cap_sibling_cpus,
 			&asym_cap_sibling_cpus, &cpu_array[0][2]);
 
-		/* T + G + P */
-		cpumask_andnot(&storage_boost_cpus, cpu_possible_mask, &cpu_array[0][0]);
-
 		/*
 		 * Treat Golds and Primes as candidates for load sync under pipeline usecase.
 		 * However, it is possible that a single CPU is not present. As prime is the
@@ -199,53 +180,19 @@ void walt_config(void)
 				&pipeline_sync_cpus, &cpu_array[0][3]);
 		}
 
-	} else if (!strcmp(name, "TUNA") || !strcmp(name, "TUNA7") || !strcmp(name, "TUNAP")) {
-		soc_feat_set(SOC_ENABLE_SILVER_RT_SPREAD_BIT);
-		soc_feat_set(SOC_ENABLE_BOOST_TO_NEXT_CLUSTER_BIT);
-		soc_feat_set(SOC_ENABLE_FORCE_SPECIAL_PIPELINE_PINNING);
-		soc_sched_lib_name_capacity = 2;
-		/*
-		 * Treat Golds and Primes as candidates for load sync under pipeline usecase.
-		 * However, it is possible that a single CPU is not present. As prime is the
-		 * only cluster with only one CPU, guard this setting by ensuring 4 clusters
-		 * are present.
-		 */
-		if (num_sched_clusters == 4) {
-			cpumask_or(&pipeline_sync_cpus,
-				&pipeline_sync_cpus, &cpu_array[0][2]);
-			cpumask_or(&pipeline_sync_cpus,
-				&pipeline_sync_cpus, &cpu_array[0][3]);
-		}
-		pipeline_swap_util_th = 100;
-
-		/*
-		 * Trailblazer settings
-		 */
-		trailblazer_floor_freq[0] = 1000000;
-		trailblazer_floor_freq[1] = 1000000;
-		trailblazer_floor_freq[2] = 1000000;
-		debugfs_walt_features |= WALT_FEAT_TRAILBLAZER_BIT;
-
-		/*
-		 * Do not put the whole cluster at Fmin during thermal halt condition.
-		 */
-		soc_feat_unset(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
-
-		sysctl_sched_suppress_region2 = 1;
-	} else if (!strcmp(name, "KERA")) {
-		soc_sched_lib_name_capacity = 3;
-		/*
-		 * Trailblazer settings
-		 */
-		trailblazer_floor_freq[0] = 1000000;
-		trailblazer_floor_freq[1] = 1000000;
-		debugfs_walt_features |= WALT_FEAT_TRAILBLAZER_BIT;
-		pipeline_swap_util_th = 100;
-
-		/*
-		 * Do not put the whole cluster at Fmin during thermal halt condition.
-		 */
-		soc_feat_unset(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
-
+		sysctl_cluster23_load_sync[0]	= 350;
+		sysctl_cluster23_load_sync[1]	= 100;
+		sysctl_cluster23_load_sync[2]	= 100;
+		sysctl_cluster32_load_sync[0]	= 512;
+		sysctl_cluster32_load_sync[1]	= 90;
+		sysctl_cluster32_load_sync[2]	= 90;
+		load_sync_util_thres[2][3]	= sysctl_cluster23_load_sync[0];
+		load_sync_low_pct[2][3]		= sysctl_cluster23_load_sync[1];
+		load_sync_high_pct[2][3]	= sysctl_cluster23_load_sync[2];
+		load_sync_util_thres[3][2]	= sysctl_cluster32_load_sync[0];
+		load_sync_low_pct[3][2]		= sysctl_cluster32_load_sync[1];
+		load_sync_high_pct[3][2]	= sysctl_cluster32_load_sync[2];
 	}
+
+	smart_freq_init(name);
 }

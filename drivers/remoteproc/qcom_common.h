@@ -8,6 +8,10 @@
 #include <linux/soc/qcom/qmi.h>
 #include <linux/remoteproc/qcom_rproc.h>
 
+#ifndef  OPLUS_FEATURE_MODEM_MINIDUMP
+#define OPLUS_FEATURE_MODEM_MINIDUMP
+#endif
+
 static const char * const subdevice_state_string[] = {
 	[QCOM_SSR_BEFORE_POWERUP]	= "before_powerup",
 	[QCOM_SSR_AFTER_POWERUP]	= "after_powerup",
@@ -76,7 +80,7 @@ void qcom_add_ssr_subdev(struct rproc *rproc, struct qcom_rproc_ssr *ssr,
 			 const char *ssr_name);
 void qcom_notify_early_ssr_clients(struct rproc_subdev *subdev);
 void qcom_remove_ssr_subdev(struct rproc *rproc, struct qcom_rproc_ssr *ssr);
-void qcom_rproc_update_recovery_status(struct rproc *rproc, bool enable, bool locked);
+void qcom_rproc_update_recovery_status(struct rproc *rproc, bool enable);
 
 #if IS_ENABLED(CONFIG_QCOM_SYSMON)
 struct qcom_sysmon *qcom_add_sysmon_subdev(struct rproc *rproc,

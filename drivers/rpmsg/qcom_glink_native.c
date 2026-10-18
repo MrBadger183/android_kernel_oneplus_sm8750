@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2016-2017, Linaro Ltd
- * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/idr.h>
@@ -29,7 +29,6 @@
 #include "rpmsg_internal.h"
 #include "qcom_glink_native.h"
 
-#define GLINK_IRQ_ITERATION_LIMITS 10
 #define GLINK_LOG_PAGE_CNT 32
 #define GLINK_INFO(ctxt, x, ...)					  \
 	ipc_log_string(ctxt, "[%s]: "x, __func__, ##__VA_ARGS__)
@@ -118,7 +117,6 @@ struct glink_core_rx_intent {
 	bool advertised;
 	bool ack_pending;
 	u32 offset;
-	bool cb_irq_done;
 
 	struct list_head node;
 };
@@ -206,7 +204,6 @@ enum {
  * @intent_received: flag indicating that an intent has been received
  * @intent_req_wq: wait queue for intent_req signalling
  * @intent_timeout_count: number of times intents have timed out consecutively
- * @cb_irq: execute data callback in irq context
  * @local_signals: local side signals
  * @remote_signals: remote side signals
  * @signals_cb: client callback for notifying signal change
@@ -249,7 +246,6 @@ struct glink_channel {
 	wait_queue_head_t intent_req_wq;
 	bool channel_ready;
 	int intent_timeout_count;
-	bool cb_irq;
 
 	unsigned int local_signals;
 	unsigned int remote_signals;
@@ -339,9 +335,7 @@ static void qcom_glink_channel_release(struct kref *ref)
 
 	spin_lock_irqsave(&channel->recv_lock, flags);
 	list_for_each_entry_safe(intent, tmp, &channel->rx_queue, node) {
-		spin_lock(&channel->intent_lock);
 		idr_remove(&channel->liids, intent->id);
-		spin_unlock(&channel->intent_lock);
 		if (!intent->size)
 			intent->data = NULL;
 		kfree(intent->data);
@@ -359,8 +353,6 @@ static void qcom_glink_channel_release(struct kref *ref)
 	}
 
 	idr_for_each_entry(&channel->liids, tmp, iid) {
-		if (!tmp->size)
-			tmp->data = NULL;
 		kfree(tmp->data);
 		kfree(tmp);
 	}
@@ -610,7 +602,7 @@ static int qcom_glink_send_open_req(struct qcom_glink *glink,
 	req.msg.cmd = cpu_to_le16(GLINK_CMD_OPEN);
 	req.msg.param1 = cpu_to_le16(channel->lcid);
 	req.msg.param2 = cpu_to_le32(name_len);
-	strscpy(req.name, channel->name, GLINK_NAME_SIZE);
+	strcpy(req.name, channel->name);
 
 	ret = qcom_glink_tx(glink, &req, req_len, NULL, 0, true);
 	if (ret)
@@ -674,8 +666,6 @@ static int qcom_glink_send_rx_done(struct qcom_glink *glink,
 	cmd.lcid = cid;
 	cmd.liid = iid;
 
-	intent->offset = 0;
-
 	ret = qcom_glink_tx(glink, &cmd, sizeof(cmd), NULL, 0, wait);
 	if (ret)
 		return ret;
@@ -684,28 +674,28 @@ static int qcom_glink_send_rx_done(struct qcom_glink *glink,
 	if (!intent->size)
 		intent->data = NULL;
 
+	ret = intent->offset;
+
 	if (!reuse) {
 		kfree(intent->data);
 		kfree(intent);
 	}
 
-	CH_INFO(channel, "reuse:%d liid:%d", reuse, iid);
+	CH_INFO(channel, "reuse:%d liid:%d data_size:%d", reuse, iid, ret);
 	return 0;
 }
 
-static int __qcom_glink_rx_done(struct qcom_glink *glink,
+static void __qcom_glink_rx_done(struct qcom_glink *glink,
 			       struct glink_channel *channel,
-			       struct glink_core_rx_intent *intent,
-			       bool wait)
+			       struct glink_core_rx_intent *intent)
 {
 	unsigned long flags;
-	int ret;
 
 	/* We don't send RX_DONE to intentless systems */
 	if (glink->intentless) {
 		kfree(intent->data);
 		kfree(intent);
-		return 0;
+		return;
 	}
 
 	/* Take it off the tree of receive intents */
@@ -720,9 +710,7 @@ static int __qcom_glink_rx_done(struct qcom_glink *glink,
 	list_del(&intent->node);
 	spin_unlock_irqrestore(&channel->intent_lock, flags);
 
-	ret = qcom_glink_send_rx_done(glink, channel, intent, wait);
-
-	return ret;
+	qcom_glink_send_rx_done(glink, channel, intent, true);
 }
 
 bool qcom_glink_rx_done_supported(struct rpmsg_endpoint *ept)
@@ -1133,12 +1121,6 @@ static int qcom_glink_rx_thread(void *data)
 				spin_unlock_irqrestore(&channel->intent_lock, flags);
 			}
 
-			if (intent->cb_irq_done) {
-				intent->cb_irq_done = false;
-				__qcom_glink_rx_done(glink, channel, intent, true);
-				continue;
-			}
-
 			if (channel->ept.cb) {
 				ret = channel->ept.cb(channel->ept.rpdev,
 						intent->data,
@@ -1157,12 +1139,14 @@ static int qcom_glink_rx_thread(void *data)
 			}
 
 			if (qcom_glink_is_wakeup(true))
-				pr_info("%s[%d:%d] %s: wakeup packet\n",
+				pr_info("%s[%d:%d] %s: wakeup packet size:%d\n",
 					channel->name, channel->lcid, channel->rcid,
-					__func__);
+					__func__, intent->offset);
+
+			intent->offset = 0;
 
 			if (!(qcom_glink_rx_done_supported(&channel->ept) && ret == RPMSG_DEFER))
-				__qcom_glink_rx_done(glink, channel, intent, true);
+				__qcom_glink_rx_done(glink, channel, intent);
 		} else {
 			ret = qcom_glink_alloc_intent_data(glink, channel, intent);
 			if (ret < 0) {
@@ -1182,70 +1166,7 @@ static int qcom_glink_rx_thread(void *data)
 	return 0;
 }
 
-static void qcom_glink_rx_data_handler(struct qcom_glink *glink,
-				       struct glink_channel *channel,
-				       struct glink_core_rx_intent *intent,
-				       unsigned int iters)
-{
-	if (channel->cb_irq &&
-	    (iters < GLINK_IRQ_ITERATION_LIMITS) &&
-	    list_empty(&channel->rx_queue)) {
-		int ret = 0;
-
-		if (!channel->glink->intentless) {
-			spin_lock(&channel->intent_lock);
-			list_add_tail(&intent->node, &channel->defer_intents);
-			spin_unlock(&channel->intent_lock);
-		}
-
-		spin_lock(&channel->recv_lock);
-		if (channel->ept.cb) {
-			ret = channel->ept.cb(channel->ept.rpdev,
-					intent->data,
-					intent->offset,
-					channel->ept.priv,
-					RPMSG_ADDR_ANY);
-
-			if (ret < 0) {
-				if (ret != -ENODEV) {
-					CH_ERR(channel,
-						"callback error ret = %d\n", ret);
-				}
-			}
-		} else {
-			CH_ERR(channel, "callback not present\n");
-		}
-		spin_unlock(&channel->recv_lock);
-
-		if (qcom_glink_is_wakeup(true))
-			pr_info("%s[%d:%d] %s: wakeup packet size:%d\n",
-				channel->name, channel->lcid, channel->rcid,
-				__func__, intent->offset);
-
-		intent->offset = 0;
-
-		if (!(qcom_glink_rx_done_supported(&channel->ept) && ret == RPMSG_DEFER)) {
-			ret = __qcom_glink_rx_done(glink, channel, intent, false);
-			if (ret < 0) {
-				intent->cb_irq_done = true;
-				goto out;
-			}
-		}
-
-		channel->buf = NULL;
-		return;
-	}
-
-out:
-	spin_lock(&channel->recv_lock);
-	list_add_tail(&intent->node, &channel->rx_queue);
-	spin_unlock(&channel->recv_lock);
-
-	wake_up_interruptible(&channel->rx_wq);
-	channel->buf = NULL;
-}
-
-static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail, unsigned int iters)
+static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail)
 {
 	struct glink_core_rx_intent *intent;
 	struct glink_channel *channel = NULL;
@@ -1326,8 +1247,7 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail, unsigned i
 		}
 	}
 
-	if (intent->size < intent->offset ||
-	    intent->size - intent->offset < chunk_size) {
+	if (intent->size - intent->offset < chunk_size) {
 		dev_err(glink->dev, "Insufficient space in intent\n");
 
 		/* The packet header lied, drop payload */
@@ -1339,8 +1259,15 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail, unsigned i
 	intent->offset += chunk_size;
 
 	/* Handle message when no fragments remain to be received */
-	if (!left_size)
-		qcom_glink_rx_data_handler(glink, channel, intent, iters);
+	if (!left_size) {
+		spin_lock(&channel->recv_lock);
+		list_add_tail(&intent->node, &channel->rx_queue);
+		spin_unlock(&channel->recv_lock);
+
+		wake_up_interruptible(&channel->rx_wq);
+
+		channel->buf = NULL;
+	}
 
 advance_rx:
 	qcom_glink_rx_advance(glink, ALIGN(sizeof(hdr) + chunk_size, 8));
@@ -1615,7 +1542,6 @@ static int qcom_glink_set_flow_control(struct rpmsg_endpoint *ept, bool pause, u
 
 void qcom_glink_native_rx(struct qcom_glink *glink)
 {
-	unsigned int iters = 0;
 	struct glink_msg msg;
 	unsigned int param1;
 	unsigned int param2;
@@ -1662,7 +1588,7 @@ void qcom_glink_native_rx(struct qcom_glink *glink)
 			break;
 		case GLINK_CMD_TX_DATA:
 		case GLINK_CMD_TX_DATA_CONT:
-			ret = qcom_glink_rx_data(glink, avail, iters);
+			ret = qcom_glink_rx_data(glink, avail);
 			break;
 		case GLINK_CMD_TX_DATA_ZERO_COPY:
 			ret = qcom_glink_rx_data_zero_copy(glink, avail);
@@ -1699,8 +1625,6 @@ void qcom_glink_native_rx(struct qcom_glink *glink)
 
 		if (ret)
 			break;
-
-		iters++;
 	}
 }
 EXPORT_SYMBOL(qcom_glink_native_rx);
@@ -1830,6 +1754,7 @@ static struct rpmsg_endpoint *qcom_glink_create_ept(struct rpmsg_device *rpdev,
 static int qcom_glink_announce_create(struct rpmsg_device *rpdev)
 {
 	struct glink_channel *channel = to_glink_channel(rpdev->ept);
+	struct sched_param param = {.sched_priority = 1};
 	struct device_node *np = rpdev->dev.of_node;
 	struct qcom_glink *glink = channel->glink;
 	struct glink_core_rx_intent *intent;
@@ -1887,8 +1812,11 @@ static int qcom_glink_announce_create(struct rpmsg_device *rpdev)
 		goto exit;
 	}
 
-	if (of_property_read_bool(np, "qcom,ch-sched-rt"))
-		sched_set_fifo_low(channel->rx_task);
+	if (of_property_read_bool(np, "qcom,ch-sched-rt")) {
+		rc = sched_setscheduler(channel->rx_task, SCHED_FIFO, &param);
+		if (rc)
+			pr_err("failed to set [%s] thread policy.\n", channel->name);
+	}
 
 exit:
 	CH_INFO(channel, "Exit\n");
@@ -2275,9 +2203,6 @@ static int qcom_glink_rx_open(struct qcom_glink *glink, unsigned int rcid,
 		rpdev->dev.parent = glink->dev;
 		rpdev->dev.release = qcom_glink_rpdev_release;
 
-		if (of_property_read_bool(rpdev->dev.of_node, "qcom,cb-irq"))
-			channel->cb_irq = true;
-
 		ret = rpmsg_register_device(rpdev);
 		if (ret)
 			goto rcid_remove;
@@ -2315,9 +2240,6 @@ static void qcom_glink_rx_close(struct qcom_glink *glink, unsigned int rcid)
 	if (WARN(!channel, "close request on unknown channel\n"))
 		return;
 	CH_INFO(channel, "\n");
-
-	WRITE_ONCE(channel->intent_req_result, 0);
-	wake_up_all(&channel->intent_req_wq);
 
 	if (channel->rpdev) {
 		strscpy_pad(chinfo.name, channel->name, sizeof(chinfo.name));
@@ -2422,6 +2344,8 @@ static void qcom_glink_work(struct work_struct *work)
 
 void qcom_glink_early_ssr_notify(void *data)
 {
+#if 1
+/* Merge CR3923613 for fix ALM[8638837] */
 	struct qcom_glink *glink = data;
 	struct glink_channel *channel;
 	unsigned long flags;
@@ -2439,6 +2363,7 @@ void qcom_glink_early_ssr_notify(void *data)
 		wake_up(&channel->intent_req_wq);
 	}
 	spin_unlock_irqrestore(&glink->idr_lock, flags);
+#endif
 }
 EXPORT_SYMBOL(qcom_glink_early_ssr_notify);
 
@@ -2596,6 +2521,7 @@ void qcom_glink_native_remove(struct qcom_glink *glink)
 	int cid;
 	int ret;
 
+	qcom_glink_early_ssr_notify(glink);
 	qcom_glink_cancel_rx_work(glink);
 
 	/* Fail all attempts at sending messages */

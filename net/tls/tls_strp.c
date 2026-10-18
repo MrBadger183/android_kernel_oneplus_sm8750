@@ -474,7 +474,7 @@ static void tls_strp_load_anchor_with_queue(struct tls_strparser *strp, int len)
 	strp->stm.offset = offset;
 }
 
-bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
+void tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 {
 	struct strp_msg *rxm;
 	struct tls_msg *tlm;
@@ -483,11 +483,8 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 	DEBUG_NET_WARN_ON_ONCE(!strp->stm.full_len);
 
 	if (!strp->copy_mode && force_refresh) {
-		if (unlikely(tcp_inq(strp->sk) < strp->stm.full_len)) {
-			WRITE_ONCE(strp->msg_ready, 0);
-			memset(&strp->stm, 0, sizeof(strp->stm));
-			return false;
-		}
+		if (WARN_ON(tcp_inq(strp->sk) < strp->stm.full_len))
+			return;
 
 		tls_strp_load_anchor_with_queue(strp, strp->stm.full_len);
 	}
@@ -497,8 +494,6 @@ bool tls_strp_msg_load(struct tls_strparser *strp, bool force_refresh)
 	rxm->offset	= strp->stm.offset;
 	tlm = tls_msg(strp->anchor);
 	tlm->control	= strp->mark;
-
-	return true;
 }
 
 /* Called with lock held on lower socket */
@@ -516,8 +511,9 @@ static int tls_strp_read_sock(struct tls_strparser *strp)
 	if (inq < strp->stm.full_len)
 		return tls_strp_read_copy(strp, true);
 
-	tls_strp_load_anchor_with_queue(strp, inq);
 	if (!strp->stm.full_len) {
+		tls_strp_load_anchor_with_queue(strp, inq);
+
 		sz = tls_rx_msg_size(strp, strp->anchor);
 		if (sz < 0) {
 			tls_strp_abort_strp(strp, sz);

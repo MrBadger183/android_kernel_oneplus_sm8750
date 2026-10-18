@@ -1154,15 +1154,6 @@ config REGULATOR_RASPBERRYPI_TOUCHSCREEN_ATTINY
 	  touchscreen unit. The regulator is used to enable power to the
 	  TC358762, display and to control backlight.
 
-config REGULATOR_QPNP_LCDB
-        tristate "Qualcomm Technologies, Inc. QPNP LCDB support"
-        depends on SPMI
-        help
-          Supports the LCDB module in the Qualcomm Technologies, Inc.
-          QPNP PMICs. Exposes regulators to control the positive and
-          negative voltage bias for the LCD display panel. It also
-          allows configurability for the various bias-voltage parameters.
-
 config REGULATOR_RC5T583
 	tristate "RICOH RC5T583 Power regulators"
 	depends on MFD_RC5T583
@@ -1767,9 +1758,5 @@ config REGULATOR_QTI_OCP_NOTIFIER
 	  Inc. PMIC devices.  This is useful for debugging as well as for
 	  providing a more graceful recovery mechanism than resetting the entire
 	  system.
-
-#ifdef OPLUS_FEATURE_PMIC
-source "drivers/regulator/camera_aw37004/Kconfig"
-#endif /* OPLUS_FEATURE_PMIC */
 
 endif

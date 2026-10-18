@@ -3,7 +3,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm SDHCI Platform driver
  *
  * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -89,6 +89,9 @@
 #define FINE_TUNE_MODE_EN	BIT(27)
 #define BIAS_OK_SIGNAL		BIT(29)
 
+#define DLL_CONFIG_3_LOW_FREQ_VAL	0x08
+#define DLL_CONFIG_3_HIGH_FREQ_VAL	0x10
+
 #define CORE_VENDOR_SPEC_POR_VAL 0xa9c
 #define CORE_CLK_PWRSAVE	BIT(1)
 #define CORE_VNDR_SPEC_ADMA_ERR_SIZE_EN	BIT(7)
@@ -165,6 +168,7 @@
 #define CMUX_SHIFT_PHASE_MASK	(7 << CMUX_SHIFT_PHASE_SHIFT)
 
 #define MSM_MMC_AUTOSUSPEND_DELAY_MS	10
+#define MSM_CLK_GATING_DELAY_MS		200 /* msec */
 
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
@@ -180,7 +184,7 @@
  * but clk's driver supply 37MHz only and uses ceil ops. So vote for
  * 37MHz to avoid picking next ceil value.
  */
-#define LEVEL_SHIFTER_HIGH_SPEED_FREQ	37500000
+#define LEVEL_SHIFTER_HIGH_SPEED_FREQ	37000000
 
 #define VS_CAPABILITIES_SDR_50_SUPPORT BIT(0)
 #define VS_CAPABILITIES_SDR_104_SUPPORT BIT(1)
@@ -193,7 +197,6 @@
 			ipc_log_string(host->sdhci_msm_ipc_log_ctx,	\
 					"%s: " fmt, __func__, ##__VA_ARGS__);\
 	} while (0)
-
 /* Max load for SD Vdd supply */
 #define SD_VMMC_MAX_LOAD_UA	800000
 
@@ -216,6 +219,7 @@
 #define TLMM_NORTH_SPARE_CORE_IE	BIT(15)
 
 #define SDHCI_CMD_FLAGS_MASK	0xff
+#define	SDHCI_BOOT_DEVICE	0x0
 
 struct sdhci_msm_offset {
 	u32 core_hc_mode;
@@ -514,10 +518,13 @@ struct sdhci_msm_host {
 	bool skip_bus_bw_voting;
 	struct sdhci_msm_bus_vote_data *bus_vote_data;
 	struct delayed_work bus_vote_work;
+	struct delayed_work clk_gating_work;
 	struct workqueue_struct *workq;	/* QoS work queue */
 	struct sdhci_msm_qos_req *sdhci_qos;
 	struct irq_affinity_notify affinity_notify;
+	struct device_attribute clk_gating;
 	struct device_attribute pm_qos;
+	u32 clk_gating_delay;
 	u32 pm_qos_delay;
 	bool cqhci_offset_changed;
 	bool reg_store;
@@ -1023,6 +1030,8 @@ static int msm_init_cm_dll(struct sdhci_host *host,
 				| CORE_LOW_FREQ_MODE), host->ioaddr +
 				msm_offset->core_dll_config_2);
 		}
+		/* wait for 5us before enabling DLL clock */
+		udelay(5);
 	}
 
 	/*
@@ -1042,11 +1051,20 @@ static int msm_init_cm_dll(struct sdhci_host *host,
 	 */
 	if (msm_host->uses_tassadar_dll) {
 		u32 config;
-
 		config = DLL_USR_CTL_POR_VAL | FINE_TUNE_MODE_EN |
 			ENABLE_DLL_LOCK_STATUS | BIAS_OK_SIGNAL;
 		writel_relaxed(config, host->ioaddr +
 				msm_offset->core_dll_usr_ctl);
+
+		config = readl_relaxed(host->ioaddr +
+				msm_offset->core_dll_config_3);
+		config &= ~0xFF;
+		if (msm_host->clk_rate < 150000000)
+			config |= DLL_CONFIG_3_LOW_FREQ_VAL;
+		else
+			config |= DLL_CONFIG_3_HIGH_FREQ_VAL;
+		writel_relaxed(config, host->ioaddr +
+			msm_offset->core_dll_config_3);
 	}
 
 	/* Step 11 - Wait for 52us */
@@ -3104,6 +3122,9 @@ void sdhci_msm_ice_disable(struct sdhci_msm_host *msm_host)
 {
 	if (!(msm_host->mmc->caps2 & MMC_CAP2_CRYPTO))
 		return;
+#if IS_ENABLED(CONFIG_MMC_CRYPTO_QTI)
+	crypto_qti_disable();
+#endif
 }
 #else /* CONFIG_MMC_CRYPTO */
 
@@ -3277,9 +3298,7 @@ static int sdhci_msm_cqe_add_host(struct sdhci_host *host,
 	ret = sdhci_msm_ice_init(msm_host, cq_host);
 	if (ret)
 		goto cleanup;
-#if IS_ENABLED(CONFIG_MMC_CRYPTO_QTI)
-	cq_host->ice = msm_host->ice;
-#endif
+
 	ret = cqhci_init(cq_host, host->mmc, dma64);
 	if (ret) {
 		dev_err(&pdev->dev, "%s: CQE init: failed (%d)\n",
@@ -4319,6 +4338,20 @@ static inline void sdhci_msm_get_of_property(struct platform_device *pdev,
 		host->quirks2 |= SDHCI_QUIRK2_BROKEN_64_BIT_DMA;
 }
 
+static void sdhci_msm_clkgate_bus_delayed_work(struct work_struct *work)
+{
+	struct sdhci_msm_host *msm_host = container_of(work,
+			struct sdhci_msm_host, clk_gating_work.work);
+	struct sdhci_host *host = mmc_priv(msm_host->mmc);
+
+	sdhci_msm_registers_save(host);
+	dev_pm_opp_set_rate(&msm_host->pdev->dev, 0);
+	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
+					msm_host->bulk_clks);
+	sdhci_msm_log_str(msm_host, "Clocks gated\n");
+	sdhci_msm_bus_voting(host, false);
+}
+
 /* Find cpu group qos from a given cpu */
 static struct qos_cpu_group *cpu_to_group(struct sdhci_msm_qos_req *r, int cpu)
 {
@@ -4639,11 +4672,10 @@ static void sdhci_msm_qos_init(struct sdhci_msm_host *msm_host)
 					err);
 			continue;
 		}
-
-		qcg->mask.bits[0] = mask & cpu_possible_mask->bits[0];
-		if (!qcg->mask.bits[0]) {
-			dev_err(&pdev->dev, "Invalid group mask, use default\n");
-			qcg->mask.bits[0] = cpu_possible_mask->bits[0];
+		qcg->mask.bits[0] = mask;
+		if (!cpumask_subset(&qcg->mask, cpu_possible_mask)) {
+			dev_err(&pdev->dev, "Invalid group mask\n");
+			goto out_vote_err;
 		}
 
 		err = of_property_count_u32_elems(group_node, "vote");
@@ -4733,6 +4765,32 @@ static int sdhci_msm_init_sysfs(struct device *dev)
 	return ret;
 }
 
+static ssize_t show_sdhci_msm_clk_gating(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", msm_host->clk_gating_delay);
+}
+
+static ssize_t store_sdhci_msm_clk_gating(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
+	uint32_t value;
+
+	if (!kstrtou32(buf, 0, &value)) {
+		msm_host->clk_gating_delay = value;
+		dev_info(dev, "set clk scaling work delay (%u)\n", value);
+	}
+
+	return count;
+}
+
 static ssize_t show_sdhci_msm_pm_qos(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -4765,6 +4823,17 @@ static void sdhci_msm_init_sysfs_gating_qos(struct device *dev)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 	int ret;
+
+	msm_host->clk_gating.show = show_sdhci_msm_clk_gating;
+	msm_host->clk_gating.store = store_sdhci_msm_clk_gating;
+	sysfs_attr_init(&msm_host->clk_gating.attr);
+	msm_host->clk_gating.attr.name = "clk_gating";
+	msm_host->clk_gating.attr.mode = 0644;
+	ret = device_create_file(dev, &msm_host->clk_gating);
+	if (ret) {
+		pr_err("%s: %s: failed creating clk gating attr: %d\n",
+				mmc_hostname(host->mmc), __func__, ret);
+	}
 
 	msm_host->pm_qos.show = show_sdhci_msm_pm_qos;
 	msm_host->pm_qos.store = store_sdhci_msm_pm_qos;
@@ -4841,59 +4910,33 @@ static void sdhci_msm_set_rumi_bus_mode(struct sdhci_host *host)
 	}
 }
 
-static bool is_bootdevice_sdhci = true;
+static u32 is_bootdevice_sdhci = SDHCI_BOOT_DEVICE;
 
-static bool sdhci_qcom_read_boot_config(struct platform_device *pdev)
+static int sdhci_qcom_read_boot_config(struct platform_device *pdev)
 {
-	u8 *buf;
+	u32 *buf;
 	size_t len;
 	struct nvmem_cell *cell;
-	int boot_device_type, data;
-	struct device *dev = &pdev->dev;
 
-	cell = nvmem_cell_get(dev, "boot_conf");
+	cell = nvmem_cell_get(&pdev->dev, "boot_conf");
 	if (IS_ERR(cell)) {
-		dev_warn(dev, "nvmem cell get failed\n");
-		goto ret;
+		dev_warn(&pdev->dev, "nvmem cell get failed\n");
+		return 0;
 	}
 
-	buf = (u8 *)nvmem_cell_read(cell, &len);
+	buf = nvmem_cell_read(cell, &len);
 	if (IS_ERR(buf)) {
-		dev_warn(dev, "nvmem cell read failed\n");
-		goto ret_put_nvmem;
+		dev_warn(&pdev->dev, "nvmem cell read failed\n");
+		nvmem_cell_put(cell);
+		return 0;
 	}
 
-	/*
-	 * Boot_device_type value is passed from the dtsi node
-	 */
-	if (of_property_read_u32(dev->of_node, "boot_device_type",
-				&boot_device_type)) {
-		dev_warn(dev, "boot_device_type not present\n");
-		goto ret_free_buf;
-	}
-
-	/*
-	 * Storage boot device fuse is present in QFPROM_RAW_OEM_CONFIG_ROW0_LSB
-	 * this fuse is blown by bootloader and pupulated in boot_config
-	 * register[1:5] - hence shift read data by 1 and mask it with 0x1f.
-	 */
-	data = *buf >> 1 & 0x1f;
-
-	/*
-	 * The value in the boot_device_type in dtsi node should match with the
-	 * value read from the register for the probe to continue.
-	 */
-	is_bootdevice_sdhci = (data == boot_device_type) ? true : false;
-
-	if (!is_bootdevice_sdhci)
-		dev_err(dev, "boot dev in reg = 0x%x boot dev in dtsi = 0x%x\n",
-				data, boot_device_type);
-
-ret_free_buf:
+	is_bootdevice_sdhci = (*buf) >> 1 & 0x1f;
+	dev_info(&pdev->dev, "boot_config val = %x is_bootdevice_sdhci = %x\n",
+			*buf, is_bootdevice_sdhci);
 	kfree(buf);
-ret_put_nvmem:
 	nvmem_cell_put(cell);
-ret:
+
 	return is_bootdevice_sdhci;
 }
 
@@ -5081,7 +5124,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
 
-	if (of_property_read_bool(node, "non-removable") && !sdhci_qcom_read_boot_config(pdev)) {
+	if (of_property_read_bool(node, "non-removable") && sdhci_qcom_read_boot_config(pdev)) {
 		dev_err(dev, "SDHCI is not boot dev.\n");
 		return 0;
 	}
@@ -5166,6 +5209,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	if (ret)
 		goto pltfm_free;
 
+	INIT_DELAYED_WORK(&msm_host->clk_gating_work,
+			sdhci_msm_clkgate_bus_delayed_work);
+
 	/* Setup regulators */
 	ret = sdhci_msm_vreg_init(&pdev->dev, msm_host, true);
 	if (ret) {
@@ -5229,6 +5275,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	if (!msm_host->workq)
 		dev_err(&pdev->dev, "Generic swq creation failed\n");
 
+	msm_host->clk_gating_delay = MSM_CLK_GATING_DELAY_MS;
 	msm_host->pm_qos_delay = MSM_MMC_AUTOSUSPEND_DELAY_MS;
 	/* Initialize pmqos */
 	sdhci_msm_qos_init(msm_host);
@@ -5288,8 +5335,7 @@ static void sdhci_msm_remove(struct platform_device *pdev)
 	int i;
 	int dead;
 
-	if (of_property_read_bool(np, "non-removable") &&
-			!is_bootdevice_sdhci) {
+	if (of_property_read_bool(np, "non-removable") && is_bootdevice_sdhci) {
 		dev_err(&pdev->dev, "SDHCI is not boot dev.\n");
 		return;
 	}
@@ -5355,12 +5401,9 @@ static __maybe_unused int sdhci_msm_runtime_suspend(struct device *dev)
 	sdhci_msm_unvote_qos_all(msm_host);
 
 skip_qos:
-	sdhci_msm_registers_save(host);
-	/* Drop the performance vote */
-	dev_pm_opp_set_rate(dev, 0);
-	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
-			msm_host->bulk_clks);
-
+	queue_delayed_work(msm_host->workq,
+			&msm_host->clk_gating_work,
+			msecs_to_jiffies(msm_host->clk_gating_delay));
 	return sdhci_msm_ice_suspend(msm_host);
 }
 
@@ -5374,24 +5417,27 @@ static __maybe_unused int sdhci_msm_runtime_resume(struct device *dev)
 	int ret;
 
 	sdhci_msm_log_str(msm_host, "Enter\n");
-	ret = clk_bulk_prepare_enable(ARRAY_SIZE(msm_host->bulk_clks),
-				       msm_host->bulk_clks);
-	if (ret) {
-		dev_err(dev, "Failed to enable clocks %d\n", ret);
-		sdhci_msm_bus_voting(host, false);
-		return ret;
+	ret = cancel_delayed_work_sync(&msm_host->clk_gating_work);
+	if (!ret) {
+		sdhci_msm_bus_voting(host, true);
+		dev_pm_opp_set_rate(dev, msm_host->clk_rate);
+		ret = clk_bulk_prepare_enable(ARRAY_SIZE(msm_host->bulk_clks),
+					       msm_host->bulk_clks);
+		if (ret) {
+			dev_err(dev, "Failed to enable clocks %d\n", ret);
+			sdhci_msm_bus_voting(host, false);
+			return ret;
+		}
+
+		sdhci_msm_registers_restore(host);
+		sdhci_msm_toggle_fifo_write_clk(host);
+		/*
+		 * Whenever core-clock is gated dynamically, it's needed to
+		 * restore the SDR DLL settings when the clock is ungated.
+		 */
+		if (msm_host->restore_dll_config && msm_host->clk_rate)
+			sdhci_msm_restore_sdr_dll_config(host);
 	}
-
-	sdhci_msm_registers_restore(host);
-	sdhci_msm_toggle_fifo_write_clk(host);
-	/*
-	 * Whenever core-clock is gated dynamically, it's needed to
-	 * restore the SDR DLL settings when the clock is ungated.
-	 */
-	if (msm_host->restore_dll_config && msm_host->clk_rate)
-		sdhci_msm_restore_sdr_dll_config(host);
-
-	dev_pm_opp_set_rate(dev, msm_host->clk_rate);
 
 	if (!qos_req)
 		return 0;
@@ -5417,6 +5463,9 @@ static int sdhci_msm_suspend_late(struct device *dev)
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 
 	sdhci_msm_log_str(msm_host, "Enter\n");
+	if (flush_delayed_work(&msm_host->clk_gating_work))
+		dev_dbg(dev, "%s Waited for clk_gating_work to finish\n",
+			 __func__);
 	return 0;
 }
 
@@ -5424,8 +5473,7 @@ static int sdhci_msm_wrapper_suspend_late(struct device *dev)
 {
 	struct device_node *np = dev->of_node;
 
-	if (of_property_read_bool(np, "non-removable") &&
-			!is_bootdevice_sdhci) {
+	if (of_property_read_bool(np, "non-removable") && is_bootdevice_sdhci) {
 		dev_info(dev, "SDHCI is not boot dev.\n");
 		return 0;
 	}

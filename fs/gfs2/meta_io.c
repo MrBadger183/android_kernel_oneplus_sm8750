@@ -93,7 +93,6 @@ const struct address_space_operations gfs2_meta_aops = {
 	.invalidate_folio = block_invalidate_folio,
 	.writepage = gfs2_aspace_writepage,
 	.release_folio = gfs2_release_folio,
-	.migrate_folio = buffer_migrate_folio_norefs,
 };
 
 const struct address_space_operations gfs2_rgrp_aops = {
@@ -101,7 +100,6 @@ const struct address_space_operations gfs2_rgrp_aops = {
 	.invalidate_folio = block_invalidate_folio,
 	.writepage = gfs2_aspace_writepage,
 	.release_folio = gfs2_release_folio,
-	.migrate_folio = buffer_migrate_folio_norefs,
 };
 
 /**

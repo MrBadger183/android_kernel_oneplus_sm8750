@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/atomic.h>
@@ -21,7 +21,6 @@
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
 #include <linux/regmap.h>
 #include <linux/regulator/driver.h>
 #include <linux/slab.h>
@@ -30,12 +29,12 @@
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
 #include <linux/qpnp/qpnp-pbs.h>
-#include <linux/remoteproc/qcom_rproc.h>
+
 #include <linux/soc/qcom/battery_charger.h>
 #include <linux/soc/qcom/qcom_hv_haptics.h>
 
 #ifdef CONFIG_HAPTIC_FEEDBACK_MODULE
-#include "../../misc/vibrator/haptic_feedback/haptic_feedback.h"
+#include "../../misc/vibrator/aw8697_haptic/haptic_feedback.h"
 #endif
 
 #ifndef OPLUS_FEATURE_CHG_BASIC
@@ -47,9 +46,6 @@
 #include <linux/version.h>
 #include <linux/proc_fs.h>
 #include <linux/power_supply.h>
-#include <linux/gpio.h>
-#include <linux/of_gpio.h>
-#include <linux/pinctrl/consumer.h>
 #endif
 
 #define OPLUS_FEATURE_RICHTAP_SUPPORT
@@ -79,7 +75,6 @@
 #define HAP_CFG_V5				0x5
 #define MAJOR_REV(rev)				((rev) >> 8)
 
-#define HAP_CFG_REV_LSB_MASK			GENMASK(7, 0)
 #define HAP_CFG_STATUS_DATA_MSB_REG		0x09
 /* STATUS_DATA_MSB definitions while MOD_STATUS_SEL is 0 */
 #define AUTO_RES_CAL_DONE_BIT			BIT(5)
@@ -229,8 +224,11 @@
 
 #define HAP_CFG_AUTORES_CFG_REG			0x63
 #define AUTORES_EN_BIT				BIT(7)
-#define AUTORES_EN_DLY_MASK(chip)		((chip->hw_type < HAP530_HV) ? \
-							GENMASK(5, 2) : GENMASK(6, 2))
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#define AUTORES_EN_DLY_MASK			GENMASK(6, 2)
+#else
+#define AUTORES_EN_DLY_MASK			GENMASK(5, 2)
+#endif
 #define AUTORES_EN_DLY(cycles)			((cycles) * 2)
 #define AUTORES_EN_DLY_6_CYCLES			AUTORES_EN_DLY(6)
 #define AUTORES_EN_DLY_7_CYCLES			AUTORES_EN_DLY(7)
@@ -317,9 +315,6 @@
 #define CURRENT_SEL_VAL_250MA			1
 
 /* Only for HAP530 */
-#define HAP_CFG_DIG_SPARE_REG			0xB8
-#define EN_FE_PU_CHECK_BIT			BIT(3)
-
 #define HAP_CFG_ICOMP_AVG_CTL1_REG		0xC0
 #define ICOMP_THRESH_MASK			GENMASK(6, 0)
 #define ICOMP_THRESH_STEP_NA			7812500
@@ -397,13 +392,8 @@
 #define PTRN_AMP_MSB_MASK			BIT(0)
 #define PTRN_AMP_LSB_MASK			GENMASK(7, 0)
 
-/* For HAP530_HV */
-#define HAP_PTN_VISENSE_ADC_CFG			0x47
-#define EN_VISENSE_PD_PROT_BIT			BIT(3)
-
-#define HAP_PTN_CL_VDRIVE_CTL_REG		0x4A
+#define HAP_PTN_CL_VDRIVE_CTL_REG		0x4A /* only for HAP530_HV */
 #define EN_CL_VDRIVE_BIT			BIT(7)
-/* End for HAP530_HV */
 
 #define HAP_PTN_PTRN2_CFG_REG			0x50
 
@@ -446,16 +436,12 @@
 #define HAP_PTN_SPMI_PATX_MEM_START_ADDR_REG	0xA4
 #define HAP_PTN_SPMI_PATX_MEM_LEN_LSB_REG	0xA6
 #define HAP_PTN_PATX_MEM_LEN_HI_MASK		GENMASK(2, 0)
-#define HAP530_V2_PTN_PATX_MEM_LEN_HI_MASK	GENMASK(4, 0)
 #define HAP_PTN_PATX_MEM_LEN_LO_MASK		GENMASK(7, 0)
 #define HAP_PTN_PATX_MEM_LEN_HI_SHIFT		8
 
 #define HAP_PTN_VSENSE_ADC_CTL_REG		0x68
 #define HAP_PTN_ISENSE_ADC_CTL_REG		0x69
 #define HAP_PTN_VISENSE_ADC_CTL_MASK		GENMASK(7, 0)
-
-#define HAP_PTN_VGAIN_ERR_COMP_LSB		0xF1
-#define HAP_PTN_IGAIN_ERR_COMP_LSB		0xF3
 
 /* register in HBOOST module */
 #define HAP_BOOST_REVISION1			0x00
@@ -535,7 +521,6 @@
 
 /* below definitions are only for HAP530_HV */
 #define HAP530_MMAP_NUM_BYTES			8192
-#define VMAX_HDRM_MV_DEFAULT			1500
 
 #define is_between(val, min, max)	\
 	(((min) <= (max)) && ((min) <= (val)) && ((val) <= (max)))
@@ -643,27 +628,9 @@ enum wa_flags {
 	SLEEP_CLK_32K_SCALE = BIT(2),
 	TOGGLE_EN_TO_FLUSH_FIFO = BIT(3),
 	RECOVER_SWR_SLAVE = BIT(4),
-	TOGGLE_MODULE_EN = BIT(5),
-	EN_RUNTIME_PM = BIT(6),
-	VISENSE_RECOVERY_EN = BIT(7),
-	IGNORE_SWR_IN_SPMI_PLAY = BIT(8),
-	DISCHARGE_VNDRV_LDO = BIT(9),
-	RESTORE_VMAX_HDRM_1P5V = BIT(10),
+	IGNORE_SWR_IN_SPMI_PLAY = BIT(7),
+	DISCHARGE_VNDRV_LDO = BIT(8),
 };
-
-#ifdef OPLUS_FEATURE_CHG_BASIC
-#define TRIG_GPIO_NUM			3
-enum trig_partition_id {
-	TRIG1_PATTITION_ID = 1,
-	TRIG2_PATTITION_ID = 2,
-	TRIG3_PATTITION_ID = 3,
-};
-enum trig_effect_id {
-	TRIG3_EFFECT_ID = 2,
-	TRIG2_EFFECT_ID = 3,
-	TRIG1_EFFECT_ID = 4,
-};
-#endif
 
 static const char * const src_str[] = {
 	"FIFO",
@@ -754,7 +721,6 @@ struct mmap_hw_info {
 	u32	memory_size;
 	u32	pat_mem_step;
 	u32	pat_mem_play_step;
-	u8	pat_mem_play_len_msb;
 	u32	fifo_mem_step;
 	u8	fifo_mem_mask;
 };
@@ -915,7 +881,6 @@ struct haptics_chip {
 	struct regulator		*hpwr_vreg;
 	struct hrtimer			hbst_off_timer;
 	struct notifier_block		hboost_nb;
-	struct notifier_block		lpass_ssr_nb;
 	struct mutex			vmax_lock;
 	struct work_struct		set_gain_work;
 	struct list_head		mmap_effect_list;
@@ -950,15 +915,6 @@ struct haptics_chip {
 	int				haptic_test_duration;
 	bool				livetap_support;
 	bool				vbat_low_vmax_support;
-	int				trig_gpio[TRIG_GPIO_NUM];
-	int				trig_irq[TRIG_GPIO_NUM];
-	int				current_irq;
-	struct delayed_work		sw_trig_work;
-	bool				trig_support;
-	u32				current_play_us;
-	u32				trig1_play_us;
-	u32				trig2_play_us;
-	u32				trig3_play_us;
 #endif
 
 #ifdef OPLUS_FEATURE_RICHTAP_SUPPORT
@@ -976,9 +932,7 @@ struct haptics_chip {
 #endif
 	bool				hboost_enabled;
 	bool				visense_enabled;
-	bool				visense_hs_disabled;
 	ktime_t				pattern_start_time;
-	void				*lpass_ssr_handle;
 };
 
 struct haptics_reg_info {
@@ -1022,9 +976,6 @@ static void richtap_clean_buf(struct haptics_chip *chip, int status);
 #ifdef OPLUS_FEATURE_CHG_BASIC
 struct haptics_chip *g_chip;
 static int haptics_toggle_module_enable(struct haptics_chip *chip);
-static int enable_memory_trig_effect(struct haptics_chip *chip);
-static int haptics_enable_play(struct haptics_chip *chip, bool en);
-static int trig_load_effect(struct haptics_chip *chip);
 #endif
 
 static struct haptics_chip *phapchip;
@@ -1154,16 +1105,7 @@ static void __dump_effects(struct haptics_chip *chip,
 #endif
 				return;
 			}
-#ifdef OPLUS_FEATURE_CHG_BASIC
-		if (chip->trig_support) {
-			if (effect->id == TRIG1_EFFECT_ID)
-				chip->trig1_play_us = effect->fifo->play_length_us;
-			if (effect->id == TRIG2_EFFECT_ID)
-				chip->trig2_play_us = effect->fifo->play_length_us;
-			if (effect->id == TRIG3_EFFECT_ID)
-				chip->trig3_play_us = effect->fifo->play_length_us;
-		}
-#endif
+
 			pos = 0;
 			pos += scnprintf(str, size, "%s", "FIFO data: ");
 			for (j = 0; j < effect->fifo->num_s; j++)
@@ -1299,15 +1241,6 @@ static int get_fifo_play_length_us(struct fifo_cfg *fifo, u32 t_lra_us)
 		break;
 	case T_LRA_DIV_8:
 		length_us /= 8;
-		break;
-	case T_LRA_X_2:
-		length_us *= 2;
-		break;
-	case T_LRA_X_4:
-		length_us *= 4;
-		break;
-	case T_LRA_X_8:
-		length_us *= 8;
 		break;
 	case F_8KHZ:
 		length_us = 1000 * fifo->num_s / 8;
@@ -1661,13 +1594,12 @@ static int haptics_check_hpwr_status(struct haptics_chip *chip)
 			break;
 
 		val &= HPWR_INTF_STATUS_MASK;
-
 		if (chip->wa_flags & DISCHARGE_VNDRV_LDO) {
 			/*
 			 * Haptics VNDRV LDO has already been disabled when HPWR_DISABLED
 			 * status is set, delay 500us here to discharge the VNDRV voltage.
 			 */
-			if ((val == HPWR_DISABLED) || (val == HPWR_READY)) {
+			if (val == HPWR_DISABLED) {
 				usleep_range(500, 501);
 				break;
 			}
@@ -1859,7 +1791,6 @@ static int haptics_set_vmax_mv(struct haptics_chip *chip, u32 vmax_mv)
 {
 	int rc = 0;
 	u32 nominal_ohm, vmax_hdrm_mv;
-	u8 cl_vdrv_ctl;
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	u32 batt_soc = 0;
 	int batt_temp;
@@ -1923,18 +1854,11 @@ static int haptics_set_vmax_mv(struct haptics_chip *chip, u32 vmax_mv)
 			goto unlock;
 		}
 
-		rc = haptics_read(chip, chip->ptn_addr_base,
-				HAP_PTN_CL_VDRIVE_CTL_REG, &cl_vdrv_ctl, 1);
-		if (rc < 0) {
-			dev_err(chip->dev, "Read CL_VDRIVE_CTL failed, rc=%d\n", rc);
-			goto unlock;
-		}
-
 		rc = haptics_masked_write(chip, chip->ptn_addr_base,
 				HAP_PTN_CL_VDRIVE_CTL_REG,
 				EN_CL_VDRIVE_BIT, 0);
 		if (rc < 0) {
-			dev_err(chip->dev, "disable CL_VDRIVE_CTL failed, rc=%d\n", rc);
+			dev_err(chip->dev, "disable CL_VDRIVE failed, rc=%d\n", rc);
 			goto unlock;
 		}
 
@@ -1956,10 +1880,11 @@ static int haptics_set_vmax_mv(struct haptics_chip *chip, u32 vmax_mv)
 			goto unlock;
 		}
 
-		rc = haptics_write(chip, chip->ptn_addr_base,
-				HAP_PTN_CL_VDRIVE_CTL_REG, &cl_vdrv_ctl, 1);
+		rc = haptics_masked_write(chip, chip->ptn_addr_base,
+				HAP_PTN_CL_VDRIVE_CTL_REG,
+				EN_CL_VDRIVE_BIT, EN_CL_VDRIVE_BIT);
 		if (rc < 0)
-			dev_err(chip->dev, "restore CL_VDRIVE_CTL failed, rc=%d\n", rc);
+			dev_err(chip->dev, "enable CL_VDRIVE failed, rc=%d\n", rc);
 	}
 
 unlock:
@@ -2001,27 +1926,25 @@ static int haptics_trigger_pbs(struct haptics_chip *chip, enum hap_pbs_type type
 	val = (u8)type;
 	rc = nvmem_device_write(chip->hap_cfg_nvmem, PBS_ARG_REG, 1, &val);
 	if (rc < 0) {
-		dev_err(chip->dev, "set PBS_ARG for auto brake cal failed, rc=%d\n",
-			rc);
+		dev_err(chip->dev, "set PBS_ARG for auto brake cal failed, rc=%d\n", rc);
 		return rc;
 	}
 
 	val = PBS_TRIG_CLR_VAL;
 	rc = nvmem_device_write(chip->hap_cfg_nvmem, PBS_TRIG_CLR_REG, 1, &val);
 	if (rc < 0) {
-		dev_err(chip->dev, "clear PBS_TRIG for auto brake cal failed, rc=%d\n",
-			rc);
+		dev_err(chip->dev, "clear PBS_TRIG for auto brake cal failed, rc=%d\n", rc);
 		return rc;
 	}
 
 	val = PBS_TRIG_SET_VAL;
 	rc = nvmem_device_write(chip->hap_cfg_nvmem, PBS_TRIG_SET_REG, 1, &val);
 	if (rc < 0)
-		dev_err(chip->dev, "set PBS_TRIG for auto brake cal failed, rc=%d\n",
-			rc);
+		dev_err(chip->dev, "set PBS_TRIG for auto brake cal failed, rc=%d\n", rc);
 
 	return rc;
 }
+
 
 static bool is_boost_vreg_enabled_in_open_loop(struct haptics_chip *chip)
 {
@@ -2083,24 +2006,6 @@ static int haptics_boost_vreg_enable(struct haptics_chip *chip, bool en)
 	chip->hboost_enabled = en;
 	return 0;
 }
-
-#ifdef OPLUS_FEATURE_CHG_BASIC
-static bool is_direct_play_enabled(struct haptics_chip *chip)
-{
-	int rc;
-	u8 val[2];
-
-	rc = haptics_get_status_data(chip, HAP_DRV_STS, val);
-	if (rc < 0)
-		return false;
-
-	if ((val[1] & HAP_DRV_PATTERN_SRC_STATUS_MASK) == DIRECT_PLAY){
-		return true;
-	}
-
-	return false;
-}
-#endif
 
 static bool is_swr_play_enabled(struct haptics_chip *chip)
 {
@@ -2294,36 +2199,6 @@ static int haptics_open_loop_drive_config(struct haptics_chip *chip, bool en)
 	return 0;
 }
 
-static int haptics_visense_handshake_enable(struct haptics_chip *chip, bool enable)
-{
-	u8 mask, val;
-	int rc;
-
-	if (chip->visense_hs_disabled != enable)
-		return 0;
-
-	mask = EN_FE_PU_CHECK_BIT;
-	val = enable ? mask : 0;
-	rc = haptics_masked_write(chip, chip->cfg_addr_base, HAP_CFG_DIG_SPARE_REG, mask, val);
-	if (rc < 0)
-		return rc;
-
-	mask = EN_VISENSE_PD_PROT_BIT;
-	val = enable ? mask : 0;
-	rc = haptics_masked_write(chip, chip->ptn_addr_base, HAP_PTN_VISENSE_ADC_CFG, mask, val);
-	if (rc < 0)
-		return rc;
-
-	mask = EN_CL_VDRIVE_BIT;
-	val = enable ? mask : 0;
-	rc = haptics_masked_write(chip, chip->ptn_addr_base, HAP_PTN_CL_VDRIVE_CTL_REG, mask, val);
-	if (rc < 0)
-		return rc;
-
-	chip->visense_hs_disabled = !enable;
-	return 0;
-}
-
 static int haptics_wait_brake_complete(struct haptics_chip *chip)
 {
 	struct haptics_play_info *play = &chip->play;
@@ -2453,9 +2328,6 @@ static int haptics_enable_play(struct haptics_chip *chip, bool en)
 	if (!en)
 		atomic_set(&chip->direct_richtap_status, false);
 #endif
-
-	if ((chip->wa_flags & TOGGLE_MODULE_EN) && !en)
-		rc = haptics_toggle_module_enable(chip);
 
 	trace_qcom_haptics_play(en);
 restore:
@@ -3135,7 +3007,7 @@ static int haptics_load_predefined_effect(struct haptics_chip *chip,
 					& HAP_PTN_PATX_MEM_LEN_HI_MASK;
 			val[2] = length & HAP_PTN_PATX_MEM_LEN_LO_MASK;
 			val[3] = (length >> HAP_PTN_PATX_MEM_LEN_HI_SHIFT)
-					& chip->mmap.hw_info.pat_mem_play_len_msb;
+					& HAP_PTN_PATX_MEM_LEN_HI_MASK;
 
 			rc = haptics_write(chip, chip->ptn_addr_base,
 					HAP_PTN_SPMI_PATX_MEM_START_ADDR_REG, val, 4);
@@ -3522,65 +3394,6 @@ static void haptics_stop_constant_effect_play(struct work_struct *work)
 		dev_err(chip->dev, "disable hpwr_vreg failed\n");
 }
 
-static inline bool is_haptics_runtime_pm_enabled(struct haptics_chip *chip)
-{
-	return !!(chip->wa_flags & EN_RUNTIME_PM);
-}
-
-#define HAPTICS_AUTO_SUSPEND_MS			1000
-
-static void haptics_runtime_disable_action(void *data)
-{
-	pm_runtime_dont_use_autosuspend(data);
-	pm_runtime_disable(data);
-}
-
-static int haptics_runtime_pm_init(struct haptics_chip *chip)
-{
-	int rc;
-
-	if (!is_haptics_runtime_pm_enabled(chip))
-		return 0;
-
-	pm_runtime_use_autosuspend(chip->dev);
-	pm_runtime_set_autosuspend_delay(chip->dev, HAPTICS_AUTO_SUSPEND_MS);
-	pm_runtime_set_active(chip->dev);
-	pm_runtime_enable(chip->dev);
-
-	rc = __devm_add_action(chip->dev, haptics_runtime_disable_action,
-			chip->dev, "haptics_runtime_disable_action");
-	if (rc < 0)
-		haptics_runtime_disable_action(chip->dev);
-
-	return rc;
-}
-
-static int haptics_runtime_resume_get(struct haptics_chip *chip)
-{
-	if (!is_haptics_runtime_pm_enabled(chip))
-		return 0;
-
-	return pm_runtime_resume_and_get(chip->dev);
-}
-
-static void haptics_runtime_autosuspend_put(struct haptics_chip *chip)
-{
-	if (!is_haptics_runtime_pm_enabled(chip))
-		return;
-
-	pm_runtime_mark_last_busy(chip->dev);
-	pm_runtime_put_autosuspend(chip->dev);
-}
-
-static void haptics_runtime_autosuspend(struct haptics_chip *chip)
-{
-	if (!is_haptics_runtime_pm_enabled(chip))
-		return;
-
-	pm_runtime_mark_last_busy(chip->dev);
-	pm_runtime_autosuspend(chip->dev);
-}
-
 static int haptics_upload_effect(struct input_dev *dev,
 		struct ff_effect *effect, struct ff_effect *old)
 {
@@ -3589,10 +3402,6 @@ static int haptics_upload_effect(struct input_dev *dev,
 	s16 level;
 	u8 amplitude;
 	int rc = 0;
-
-	rc = haptics_runtime_resume_get(chip);
-	if (rc < 0)
-		return rc;
 
 	/*
 	 * When switching between SWR and SPMI play, the haptics module doesn't
@@ -3607,8 +3416,9 @@ static int haptics_upload_effect(struct input_dev *dev,
 	if (chip->wa_flags & IGNORE_SWR_IN_SPMI_PLAY) {
 		rc = haptics_ignore_swr_play(chip, true);
 		if (rc < 0)
-			goto auto_suspend;
+			goto restore;
 	}
+
 
 	switch (effect->type) {
 	case FF_CONSTANT:
@@ -3646,6 +3456,7 @@ static int haptics_upload_effect(struct input_dev *dev,
 			rc = -EINVAL;
 			goto restore;
 		}
+
 		if (effect->u.periodic.custom_len ==
 				sizeof(struct custom_fifo_data)) {
 			rc = haptics_load_custom_effect(chip,
@@ -3674,7 +3485,6 @@ static int haptics_upload_effect(struct input_dev *dev,
 	default:
 		dev_err(chip->dev, "%d effect is not supported\n",
 				effect->type);
-		rc = -EINVAL;
 		goto restore;
 	}
 
@@ -3704,8 +3514,6 @@ static int haptics_upload_effect(struct input_dev *dev,
 restore:
 	if (chip->wa_flags & IGNORE_SWR_IN_SPMI_PLAY)
 		haptics_ignore_swr_play(chip, false);
-auto_suspend:
-	haptics_runtime_autosuspend_put(chip);
 	return rc;
 }
 
@@ -3841,20 +3649,11 @@ static int haptics_erase(struct input_dev *dev, int effect_id)
 		if (rc < 0)
 			dev_err(chip->dev, "visense lra impedance measurement failed, rc=%d\n", rc);
 	}
-
 restore:
-	/* Restore Vmax headroom to 1.5V after SPMI play is done */
-	if (chip->wa_flags & RESTORE_VMAX_HDRM_1P5V) {
-		rc = haptics_set_vmax_headroom_mv(chip, VMAX_HDRM_MV_DEFAULT);
-		if (rc)
-			return rc;
-	}
-
 	/* Restore SWR play mode after SPMI play is done or any faults */
 	if (chip->wa_flags & IGNORE_SWR_IN_SPMI_PLAY)
 		haptics_ignore_swr_play(chip, false);
 
-	haptics_runtime_autosuspend_put(chip);
 	return rc;
 }
 
@@ -4207,7 +4006,6 @@ static int haptics_init_fifo_memory(struct haptics_chip *chip)
 		chip->mmap.hw_info.memory_size = HAP530_MMAP_NUM_BYTES;
 		chip->mmap.hw_info.pat_mem_step = HAP530_MMAP_PAT_LEN_PER_LSB;
 		chip->mmap.hw_info.pat_mem_play_step = HAP530_MMAP_PAT_LEN_PER_LSB;
-		chip->mmap.hw_info.pat_mem_play_len_msb = HAP_PTN_PATX_MEM_LEN_HI_MASK;
 		chip->mmap.hw_info.fifo_mem_step = HAP530_MMAP_FIFO_LEN_PER_LSB;
 		chip->mmap.hw_info.fifo_mem_mask = HAP530_MMAP_FIFO_LEN_MASK;
 
@@ -4219,8 +4017,6 @@ static int haptics_init_fifo_memory(struct haptics_chip *chip)
 				return rc;
 			chip->mmap.hw_info.pat_mem_play_step =
 					HAP530_V2_MMAP_PAT_LEN_PER_LSB;
-			chip->mmap.hw_info.pat_mem_play_len_msb =
-					HAP530_V2_PTN_PATX_MEM_LEN_HI_MASK;
 		}
 	}
 
@@ -4378,7 +4174,7 @@ static int haptics_init_vmax_config(struct haptics_chip *chip)
 
 	chip->is_hv_haptics = true;
 	chip->max_vmax_mv = MAX_VMAX_MV;
-	if (chip->hw_type >= HAP520_MV) {
+	if (chip->hw_type > HAP520_MV) {
 		rc = haptics_read(chip, chip->cfg_addr_base,
 			HAP_CFG_HW_CONFIG_REG, &val, 1);
 		if (rc < 0)
@@ -4408,40 +4204,19 @@ static int haptics_config_wa(struct haptics_chip *chip)
 			TOGGLE_EN_TO_FLUSH_FIFO | RECOVER_SWR_SLAVE;
 		break;
 	case HAP520_MV:
-		chip->wa_flags |= SLEEP_CLK_32K_SCALE;
-		if (!(chip->cfg_revision & HAP_CFG_REV_LSB_MASK))
-			chip->wa_flags |= TOGGLE_MODULE_EN;
 		break;
 	case HAP525_HV:
 		if (chip->hbst_revision == HAP_BOOST_V0P1)
 			chip->wa_flags |= SW_CTRL_HBST;
 		break;
 	case HAP530_HV:
-		chip->wa_flags |= VISENSE_RECOVERY_EN |
-			IGNORE_SWR_IN_SPMI_PLAY | DISCHARGE_VNDRV_LDO |
-			RESTORE_VMAX_HDRM_1P5V;
+		chip->wa_flags |= IGNORE_SWR_IN_SPMI_PLAY | DISCHARGE_VNDRV_LDO;
 		break;
 	default:
 		dev_err(chip->dev, "HW type %d does not match\n",
 			chip->hw_type);
 		return -EINVAL;
 	}
-
-	return 0;
-}
-
-static int haptics_visense_enable(struct haptics_chip *chip, bool enable)
-{
-	u8 val = enable ? HAP_PTN_VISENSE_ADC_CTL_MASK : 0;
-	int rc;
-
-	rc = haptics_write(chip, chip->ptn_addr_base, HAP_PTN_VSENSE_ADC_CTL_REG, &val, 1);
-	if (rc < 0)
-		return rc;
-
-	rc = haptics_write(chip, chip->ptn_addr_base, HAP_PTN_ISENSE_ADC_CTL_REG, &val, 1);
-	if (rc < 0)
-		return rc;
 
 	return 0;
 }
@@ -4459,7 +4234,12 @@ static int haptics_init_visense_config(struct haptics_chip *chip)
 		chip->visense_enabled = val & HAP_PTN_VISENSE_EN_BIT;
 
 	if (chip->visense_enabled) {
-		rc = haptics_visense_enable(chip, true);
+		val = HAP_PTN_VISENSE_ADC_CTL_MASK;
+		rc = haptics_write(chip, chip->ptn_addr_base, HAP_PTN_VSENSE_ADC_CTL_REG, &val, 1);
+		if (rc < 0)
+			return rc;
+
+		rc = haptics_write(chip, chip->ptn_addr_base, HAP_PTN_ISENSE_ADC_CTL_REG, &val, 1);
 		if (rc < 0)
 			return rc;
 
@@ -4516,12 +4296,6 @@ static int haptics_hw_init(struct haptics_chip *chip)
 	rc = haptics_init_vmax_config(chip);
 	if (rc < 0)
 		return rc;
-
-	if (chip->wa_flags & RESTORE_VMAX_HDRM_1P5V) {
-		rc = haptics_set_vmax_headroom_mv(chip, VMAX_HDRM_MV_DEFAULT);
-		if (rc)
-			return rc;
-	}
 
 	rc = haptics_init_drive_config(chip);
 	if (rc < 0)
@@ -5294,32 +5068,13 @@ static int haptics_parse_hpwr_vreg_dt(struct haptics_chip *chip)
 	return 0;
 }
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
-static irqreturn_t trig_irq_handler(int irq, void *data)
-{
-	int rc;
-	struct haptics_chip *chip = data;
-	if (!chip) {
-		dev_err(chip->dev,"trig_irq_handler null.\n");
-		return IRQ_HANDLED;
-	}
-	chip->current_irq = irq;
-	rc = enable_memory_trig_effect(chip);
-	if (rc < 0) {
-		dev_err(chip->dev, "enable memory trige ffect failed rc=%d\n",rc);
-	}
-	return IRQ_HANDLED;
-}
-#endif
 static int haptics_parse_dt(struct haptics_chip *chip)
 {
 	struct haptics_hw_config *config = &chip->config;
 	struct device_node *node = chip->dev->of_node;
 	struct platform_device *pdev = to_platform_device(chip->dev);
 	int rc = 0, tmp;
-#ifdef OPLUS_FEATURE_CHG_BASIC
-	int i = 0;
-#endif
+
 	rc = haptics_parse_hpwr_vreg_dt(chip);
 	if (rc < 0)
 		return rc;
@@ -5431,29 +5186,8 @@ static int haptics_parse_dt(struct haptics_chip *chip)
 	if (rc || config->vbat_low_fifo_vmax_mv > config->fifo_vmax_mv) {
 		config->vbat_low_fifo_vmax_mv = config->fifo_vmax_mv;
 	}
-
-	chip->trig_support = of_property_read_bool(node, "oplus,trig_support");
-	dev_err(chip->dev, "oplus,trig_support = %d\n", chip->trig_support);
-
-	if (chip->trig_support) {
-		chip->trig_gpio[0]= of_get_named_gpio(node,"oplus,trig1-gpio", 0);
-		chip->trig_gpio[1]= of_get_named_gpio(node,"oplus,trig2-gpio", 0);
-		chip->trig_gpio[2]= of_get_named_gpio(node,"oplus,trig3-gpio", 0);
-		for (i = 0; i < TRIG_GPIO_NUM; i++) {
-			if (gpio_is_valid(chip->trig_gpio[i])) {
-				gpio_direction_input(chip->trig_gpio[i]);
-				chip->trig_irq[i] = gpio_to_irq(chip->trig_gpio[i]);
-				rc = devm_request_threaded_irq(chip->dev, chip->trig_irq[i],
-					NULL, trig_irq_handler,
-					IRQF_TRIGGER_FALLING | IRQF_ONESHOT, "oplus_trig", chip);
-				if (rc < 0) {
-					dev_err(chip->dev, "trig_gpio[%d] request fail, rc=%d\n", i, rc);
-					continue;
-				}
-			}
-		}
-	}
 #endif
+
 	config->fifo_empty_thresh = chip->fifo_info->fifo_empty_threshold;
 	of_property_read_u32(node, "qcom,fifo-empty-threshold",
 			&config->fifo_empty_thresh);
@@ -5513,6 +5247,7 @@ static int haptics_parse_dt(struct haptics_chip *chip)
 
 	if (chip->hw_type >= HAP525_HV)
 		config->hbst_ovp_trim = of_property_read_bool(node, "qcom,hbst-ovp-trim");
+	dev_err(chip->dev, "qcom,hbst-ovp-trim = %d\n",config->hbst_ovp_trim);
 
 	config->preload_effect = -EINVAL;
 	rc = haptics_parse_effects_dt(chip);
@@ -5545,25 +5280,12 @@ static int swr_slave_reg_enable(struct regulator_dev *rdev)
 	int rc;
 	u8 mask = SWR_PAT_INPUT_EN_BIT | SWR_PAT_RES_N_BIT | SWR_PAT_CFG_EN_BIT;
 
-	if (chip->swr_slave_enabled)
-		return 0;
-
-	rc = haptics_runtime_resume_get(chip);
-	if (rc < 0)
-		return rc;
-
-	if (chip->wa_flags & VISENSE_RECOVERY_EN) {
-		rc = haptics_visense_handshake_enable(chip, true);
-		if (rc < 0)
-			goto auto_suspend;
-	}
-
 	rc = haptics_masked_write(chip, chip->cfg_addr_base,
 			HAP_CFG_SWR_ACCESS_REG, mask, mask);
 	if (rc < 0) {
 		dev_err(chip->dev, "Failed to enable SWR_PAT, rc=%d\n",
 				rc);
-		goto auto_suspend;
+		return rc;
 	}
 
 	if (!(chip->wa_flags & RECOVER_SWR_SLAVE))
@@ -5578,35 +5300,25 @@ static int swr_slave_reg_enable(struct regulator_dev *rdev)
 	if (is_swr_play_enabled(chip)) {
 		rc = haptics_ignore_swr_play(chip, true);
 		if (rc < 0)
-			goto auto_suspend;
+			return rc;
 
 		rc = haptics_toggle_module_enable(chip);
 		if (rc < 0)
-			goto auto_suspend;
+			return rc;
 	} else {
 		rc = haptics_ignore_swr_play(chip, false);
 		if (rc < 0)
-			goto auto_suspend;
+ 			return rc;
 	}
 done:
 	chip->swr_slave_enabled = true;
 	return 0;
-auto_suspend:
-	haptics_runtime_autosuspend_put(chip);
-	return rc;
 }
 
 static int swr_slave_reg_disable(struct regulator_dev *rdev)
 {
 	struct haptics_chip *chip = rdev_get_drvdata(rdev);
-	int rc = 0;
-
-	if (!chip->swr_slave_enabled)
-		return 0;
-
-	/* Keep SWR slave always enabled for HAP530_HV */
-	if (chip->hw_type == HAP530_HV)
-		goto done;
+	int rc;
 
 	rc = haptics_masked_write(chip, chip->cfg_addr_base,
 			HAP_CFG_SWR_ACCESS_REG,
@@ -5614,13 +5326,11 @@ static int swr_slave_reg_disable(struct regulator_dev *rdev)
 			SWR_PAT_CFG_EN_BIT, 0);
 	if (rc < 0) {
 		dev_err(chip->dev, "Failed to disable SWR_PAT, rc=%d\n", rc);
-		goto auto_suspend;
+		return rc;
 	}
-done:
+
 	chip->swr_slave_enabled = false;
-auto_suspend:
-	haptics_runtime_autosuspend_put(chip);
-	return rc;
+	return 0;
 }
 
 static int swr_slave_reg_is_enabled(struct regulator_dev *rdev)
@@ -5650,19 +5360,17 @@ static int haptics_init_swr_slave_regulator(struct haptics_chip *chip)
 	u8 val, mask;
 	int rc = 0;
 
-	if (chip->hw_type != HAP530_HV) {
-		rc = haptics_read(chip, chip->cfg_addr_base,
-				HAP_CFG_SWR_ACCESS_REG, &val, 1);
-		if (rc < 0) {
-			dev_err(chip->dev, "Failed to read SWR_ACCESS, rc=%d\n",
-					rc);
-			return rc;
-		}
-
-		mask = SWR_PAT_INPUT_EN_BIT | SWR_PAT_RES_N_BIT | SWR_PAT_CFG_EN_BIT;
-		val &= mask;
-		chip->swr_slave_enabled = ((val == mask) ? true : false);
+	rc = haptics_read(chip, chip->cfg_addr_base,
+			HAP_CFG_SWR_ACCESS_REG, &val, 1);
+	if (rc < 0) {
+		dev_err(chip->dev, "Failed to read SWR_ACCESS, rc=%d\n",
+				rc);
+		return rc;
 	}
+
+	mask = SWR_PAT_INPUT_EN_BIT | SWR_PAT_RES_N_BIT | SWR_PAT_CFG_EN_BIT;
+	val &= mask;
+	chip->swr_slave_enabled = ((val == mask) ? true : false);
 
 	cfg.dev = chip->dev;
 	cfg.driver_data = chip;
@@ -5744,6 +5452,7 @@ static u32 get_lra_impedance_capable_max(struct haptics_chip *chip)
 static int haptics_measure_realtime_lra_impedance(struct haptics_chip *chip)
 {
 	u32 vmax_mv, nominal_ohm, current_ma, vmax_margin_mv, play_length_us, lsb_mohm;
+	u8 samples[4] = {0x7f, 0x7f, 0x7f, 0x7f};
 	struct pattern_cfg pattern = {
 		.samples = {
 			    {0xff, T_LRA, false},
@@ -5759,13 +5468,11 @@ static int haptics_measure_realtime_lra_impedance(struct haptics_chip *chip)
 		.play_length_us = chip->config.t_lra_us + 2000, /* drive it at least 1 cycle */
 		.preload = false,
 	};
-	u8 samples[4] = {0x7f, 0x7f, 0, 0};
-	u32 t_lra_us = (chip->config.cl_t_lra_us * 3) / 2; /* drive off resonance in FIFO mode */
 	struct fifo_cfg fifo = {
 		.samples = samples,
 		.num_s = ARRAY_SIZE(samples),
-		.period_per_s = T_LRA_DIV_2, /* half cycle with T_LRA */
-		.play_length_us = t_lra_us + 2000,
+		.period_per_s = T_LRA_DIV_2,	/* drive off resonance of the LRA */
+		.play_length_us = chip->config.t_lra_us * ARRAY_SIZE(samples) / 2 + 2000,
 		.preload = false,
 	};
 	u8 val, current_sel;
@@ -5823,11 +5530,6 @@ static int haptics_measure_realtime_lra_impedance(struct haptics_chip *chip)
 		goto restore;
 
 	if (chip->hw_type >= HAP530_HV) {
-		/* drive off resonance of the LRA */
-		rc = haptics_config_openloop_lra_period(chip, t_lra_us);
-		if (rc < 0)
-			goto restore;
-
 		rc = haptics_enable_autores(chip, false);
 		if (rc < 0)
 			goto restore;
@@ -5893,13 +5595,6 @@ static int haptics_measure_realtime_lra_impedance(struct haptics_chip *chip)
 restore:
 	if (rc < 0)
 		dev_err(chip->dev, "measure LRA impedance failed, rc=%d\n", rc);
-
-	/* restore T_LRA */
-	if (chip->hw_type >= HAP530_HV) {
-		rc = haptics_config_openloop_lra_period(chip, chip->config.cl_t_lra_us);
-		if (rc)
-			return rc;
-	}
 
 	return haptics_masked_write(chip, chip->cfg_addr_base,
 			HAP_CFG_RT_LRA_IMPD_MEAS_CFG_REG,
@@ -6149,10 +5844,9 @@ static int haptics_detect_lra_frequency(struct haptics_chip *chip)
 		return rc;
 	}
 
-	if (!chip->config.sw_cmd_freq_det)
-		val = AUTORES_EN_BIT;
-
 	if (chip->hw_type >= HAP525_HV) {
+		if (!chip->config.sw_cmd_freq_det)
+			val = AUTORES_EN_BIT;
 #ifdef OPLUS_FEATURE_CHG_BASIC
 		rc = of_property_read_u32(node, "qcom,autores-en-delay-cycles", &autores_en_delay_cycles);
 		if (rc) {
@@ -6164,18 +5858,19 @@ static int haptics_detect_lra_frequency(struct haptics_chip *chip)
 			autores_error_window = AUTORES_ERR_WINDOW_50_PERCENT;
 		}
 		val |= autores_en_delay_cycles << AUTORES_EN_DLY_SHIFT |
-			autores_error_window;
+			autores_error_window | AUTORES_EN_BIT;
 #else
 		val |= AUTORES_EN_DLY_7_CYCLES << AUTORES_EN_DLY_SHIFT |
 			AUTORES_ERR_WINDOW_25_PERCENT;
 #endif
 	} else {
-		val |= AUTORES_EN_DLY_6_CYCLES << AUTORES_EN_DLY_SHIFT|
-			AUTORES_ERR_WINDOW_50_PERCENT;
+		val = AUTORES_EN_DLY_6_CYCLES << AUTORES_EN_DLY_SHIFT|
+			AUTORES_ERR_WINDOW_50_PERCENT | AUTORES_EN_BIT;
 	}
+
 	rc = haptics_masked_write(chip, chip->cfg_addr_base,
 			HAP_CFG_AUTORES_CFG_REG, AUTORES_EN_BIT |
-			AUTORES_EN_DLY_MASK(chip) | AUTORES_ERR_WINDOW_MASK,
+			AUTORES_EN_DLY_MASK | AUTORES_ERR_WINDOW_MASK,
 			val);
 	if (rc < 0)
 		return rc;
@@ -6628,10 +6323,6 @@ static int haptics_start_lra_calibrate(struct haptics_chip *chip)
 	u32 cl_f_lra;
 #endif
 
-	rc = haptics_runtime_resume_get(chip);
-	if (rc < 0)
-		return rc;
-
 	mutex_lock(&chip->play.lock);
 	/*
 	 * Ignore calibration if it's in FIFO playing to avoid
@@ -6667,8 +6358,8 @@ static int haptics_start_lra_calibrate(struct haptics_chip *chip)
 		goto unlock;
 	}
 
-	/* Sleep 50ms to stabilize the LRA from frequency detection */
-	msleep(50);
+	/* Sleep at least 4ms to stabilize the LRA from frequency detection */
+	usleep_range(4000, 5000);
 	if (chip->config.measure_lra_impedance)
 		rc = haptics_measure_realtime_lra_impedance(chip);
 	else
@@ -6694,13 +6385,9 @@ static int haptics_start_lra_calibrate(struct haptics_chip *chip)
 	}
 
 unlock:
-	if (chip->wa_flags & RESTORE_VMAX_HDRM_1P5V)
-		haptics_set_vmax_headroom_mv(chip, VMAX_HDRM_MV_DEFAULT);
-
 	haptics_clear_fault(chip);
 	chip->play.in_calibration = false;
 	mutex_unlock(&chip->play.lock);
-	haptics_runtime_autosuspend_put(chip);
 	return rc;
 }
 
@@ -7195,7 +6882,15 @@ static int richtap_file_mmap(struct file *filp, struct vm_area_struct *vma)
 	int ret = 0;
 
 	//only accept PROT_READ, PROT_WRITE and MAP_SHARED from the API of mmap
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 89))
 	vm_flags_t vm_flags = calc_vm_prot_bits(PROT_READ|PROT_WRITE, 0);
+#elif (LINUX_VERSION_CODE > KERNEL_VERSION(6, 6, 0))
+	vm_flags_t vm_flags = calc_vm_prot_bits(PROT_READ|PROT_WRITE, 0) |
+		__calc_vm_flag_bits(MAP_SHARED);
+#else
+	vm_flags_t vm_flags = calc_vm_prot_bits(PROT_READ|PROT_WRITE, 0) |
+		calc_vm_flag_bits(MAP_SHARED);
+#endif
 	vm_flags |= current->mm->def_flags | VM_MAYREAD |
 		VM_MAYWRITE | VM_MAYEXEC | VM_SHARED | VM_MAYSHARE;
 	if (vma && (pgprot_val(vma->vm_page_prot) != pgprot_val(vm_get_page_prot(vm_flags))))
@@ -7652,42 +7347,6 @@ static ssize_t livetap_support_store(const struct class *c,
 	return count;
 }
 static CLASS_ATTR_RW(livetap_support);
-
-static ssize_t trig_support_show(const struct class *c,
-		const struct class_attribute *attr, char *buf)
-{
-	struct haptics_chip *chip = container_of(c,
-			struct haptics_chip, hap_class);
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", chip->trig_support);
-}
-
-static ssize_t trig_support_store(const struct class *c,
-		const struct class_attribute *attr, const char *buf, size_t count)
-{
-	struct haptics_chip *chip = container_of(c,
-			struct haptics_chip, hap_class);
-	int val;
-	int rc;
-
-	if (kstrtouint(buf, 0, &val))
-		return -EINVAL;
-
-	if (val > 0)
-		chip->trig_support = true;
-	else
-		chip->trig_support = false;
-
-	if (chip->trig_support) {
-		rc = enable_memory_trig_effect(chip);
-		if (rc < 0) {
-			dev_err(chip->dev, "enable memory trige ffect failed rc=%d\n",rc);
-		}
-	}
-
-	return count;
-}
-static CLASS_ATTR_RW(trig_support);
 #endif
 
 static ssize_t primitive_duration_show(const struct class *c,
@@ -7737,40 +7396,6 @@ static ssize_t visense_enabled_show(const struct class *c,
 }
 static CLASS_ATTR_RO(visense_enabled);
 
-static ssize_t v_gain_error_show(const struct class *c,
-		const struct class_attribute *attr, char *buf)
-{
-	struct haptics_chip *chip = container_of(c,
-			struct haptics_chip, hap_class);
-	u8 v_gain_error[2] = { 0 };
-	int rc;
-
-	rc = haptics_read(chip, chip->ptn_addr_base,
-			HAP_PTN_VGAIN_ERR_COMP_LSB, v_gain_error, 2);
-	if (rc < 0)
-		return rc;
-
-	return scnprintf(buf, PAGE_SIZE, "%#x\n", (v_gain_error[1] << 8 | v_gain_error[0]));
-}
-static const CLASS_ATTR_RO(v_gain_error);
-
-static ssize_t i_gain_error_show(const struct class *c,
-		const struct class_attribute *attr, char *buf)
-{
-	struct haptics_chip *chip = container_of(c,
-			struct haptics_chip, hap_class);
-	u8 i_gain_error[2] = { 0 };
-	int rc;
-
-	rc = haptics_read(chip, chip->ptn_addr_base,
-			HAP_PTN_IGAIN_ERR_COMP_LSB, i_gain_error, 2);
-	if (rc < 0)
-		return rc;
-
-	return scnprintf(buf, PAGE_SIZE, "%#x\n", (i_gain_error[1] << 8 | i_gain_error[0]));
-}
-static const CLASS_ATTR_RO(i_gain_error);
-
 static struct attribute *hap_class_attrs[] = {
 	&class_attr_lra_calibration.attr,
 	&class_attr_lra_frequency_hz.attr,
@@ -7786,7 +7411,6 @@ static struct attribute *hap_class_attrs[] = {
 	&class_attr_lra_cal_rc_clk_cal_count.attr,
 	&class_attr_vibrator_type.attr,
 	&class_attr_livetap_support.attr,
-	&class_attr_trig_support.attr,
 #endif
 	&class_attr_primitive_duration.attr,
 	&class_attr_visense_enabled.attr,
@@ -8064,185 +7688,7 @@ static int haptics_boost_notifier(struct notifier_block *nb, unsigned long event
 	return 0;
 }
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
-static int trig_load_effect(struct haptics_chip *chip)
-{
-	struct haptics_play_info *play = &chip->play;
-	s16 custom_data[CUSTOM_DATA_LEN] = { 0 };
-	struct haptics_effect *effects = NULL;
-	s16 custom_id = 0;
-	int effects_count = 0;
-	int rc, i;
-	bool primitive;
-	if (chip->current_irq == chip->trig_irq[0]) {
-		custom_data[CUSTOM_DATA_EFFECT_IDX] = TRIG1_EFFECT_ID;
-		chip->current_play_us = chip->trig1_play_us;
-	} else if (chip->current_irq == chip->trig_irq[1]) {
-		custom_data[CUSTOM_DATA_EFFECT_IDX] = TRIG2_EFFECT_ID;
-		chip->current_play_us = chip->trig2_play_us;
-	} else {
-		custom_data[CUSTOM_DATA_EFFECT_IDX] = TRIG3_EFFECT_ID;
-		chip->current_play_us = chip->trig3_play_us;
-	}
-
-	primitive = !!(custom_data[CUSTOM_DATA_EFFECT_IDX] & PRIMITIVE_EFFECT_ID_BIT);
-
-	if (primitive) {
-		if (chip->primitives_count == 0)
-			return -EINVAL;
-
-		custom_id = custom_data[CUSTOM_DATA_EFFECT_IDX] & PRIMITIVE_EFFECT_ID_MASK;
-		effects = chip->primitives;
-		effects_count = chip->primitives_count;
-	} else {
-		if (chip->effects_count == 0)
-			return -EINVAL;
-
-		custom_id = custom_data[CUSTOM_DATA_EFFECT_IDX];
-		effects = chip->effects;
-		effects_count = chip->effects_count;
-	}
-	for (i = 0; i < effects_count; i++)
-		if (effects[i].id == custom_id)
-			break;
-
-	if (i == effects_count) {
-		dev_err(chip->dev, "effect%d is not supported!\n",
-				custom_data[CUSTOM_DATA_EFFECT_IDX]);
-		return -EINVAL;
-	}
-
-	play->vmax_mv = effects[i].vmax_mv;
-	dev_err(chip->dev, "upload %s effect %d, vmax=%d\n", primitive ? "primitive" : "predefined",
-			effects[i].id, play->vmax_mv);
-
-	rc = haptics_load_predefined_effect(chip, &effects[i]);
-	if (rc < 0) {
-		dev_err(chip->dev, "Play predefined effect%d failed, rc=%d\n",
-				effects[i].id, rc);
-		goto unlock;
-	}
-	return 0;
-unlock:
-	return rc;
-}
-
-static int enable_memory_trig_effect(struct haptics_chip *chip)
-{
-	int rc;
-	if (!chip) {
-		dev_err(chip->dev,"enable_memory_trig_effect chip null.\n");
-		return -EFAULT;
-	}
-	mutex_lock(&chip->play.lock);
-	if (((chip->play.pattern_src == FIFO) && atomic_read(&chip->play.fifo_status.is_busy))
-			|| (is_direct_play_enabled(chip) && (chip->play.pattern_src == DIRECT_PLAY))) {
-		dev_err(chip->dev, "In %d playing, ignore trig\n", chip->play.pattern_src);
-		mutex_unlock(&chip->play.lock);
-		return 0;
-	}
-
-	chip->play.in_calibration = true;
-	rc = trig_load_effect(chip);
-	if (rc < 0) {
-		dev_err(chip->dev, "Upload periodic effect failed rc=%d\n",rc);
-		goto unlock;
-	}
-	rc = haptics_enable_play(chip, true);
-	if (rc < 0) {
-		dev_err(chip->dev, "enable haptics_enable_play failed rc=%d\n",rc);
-		goto unlock;
-	}
-	usleep_range(chip->current_play_us, (chip->current_play_us) + 1);
-	rc = haptics_enable_play(chip, false);
-	if (rc < 0) {
-		dev_err(chip->dev, "disable haptics_enable_play failed rc=%d\n",rc);
-		goto unlock;
-	}
-unlock:
-	mutex_unlock(&chip->play.lock);
-	chip->play.in_calibration = false;
-	return rc;
-}
-
-static void sw_trig_work_proc(struct work_struct *work)
-{
-	int rc;
-	struct haptics_chip *chip  = container_of(work, struct haptics_chip, sw_trig_work.work);
-	if (!chip) {
-		dev_err(chip->dev,"sw_trig_work_proc null.\n");
-		return;
-	}
-	rc = enable_memory_trig_effect(chip);
-	if (rc < 0) {
-		dev_err(chip->dev, "enable_memory_trig_effect failed rc=%d\n",rc);
-	}
-}
-
-static int sw_trig_init(struct haptics_chip *chip)
-{
-	if (!chip) {
-		dev_err(chip->dev,"sw_trig_init	chip null.\n");
-		return -EFAULT;
-	}
-	INIT_DELAYED_WORK(&chip->sw_trig_work, sw_trig_work_proc);
-	return 0;
-}
-#endif
-
 #include "qcom-hv-haptics-debugfs.c"
-
-static int haptics_lpass_ssr_notifier(struct notifier_block *nb, unsigned long event, void *data)
-{
-	struct haptics_chip *chip = container_of(nb, struct haptics_chip, lpass_ssr_nb);
-	u8 val;
-	int rc;
-
-	if (!(chip->wa_flags & VISENSE_RECOVERY_EN))
-		return NOTIFY_DONE;
-
-	if (!is_swr_play_enabled(chip)) {
-		dev_dbg(chip->dev, "ignore VISENSE recovery if not in SWR play\n");
-		return NOTIFY_DONE;
-	}
-
-	switch (event) {
-	case QCOM_SSR_BEFORE_SHUTDOWN:
-		/*
-		 * Enable HAPTICS_EN to keep haptics module clock on during ADSP
-		 * SSR. It's needed for keeping haptics SPMI and SWR data port in
-		 * correct state, and it could be disabled after ADSP SSR.
-		 */
-		rc = haptics_runtime_resume_get(chip);
-		if (rc < 0)
-			return rc;
-
-		val = 0;
-		rc = haptics_write(chip, chip->cfg_addr_base, HAP_CFG_SWR_ACCESS_REG,  &val, 1);
-		if (rc < 0)
-			return rc;
-
-		rc = haptics_visense_handshake_enable(chip, false);
-		if (rc < 0)
-			return rc;
-
-		dev_dbg(chip->dev, "QCOM_SSR_BEFORE_SHUTDOWN is handled\n");
-		break;
-	case QCOM_SSR_BEFORE_POWERUP:
-		val = SWR_PAT_INPUT_EN_BIT | SWR_PAT_RES_N_BIT | SWR_PAT_CFG_EN_BIT;
-		rc = haptics_write(chip, chip->cfg_addr_base, HAP_CFG_SWR_ACCESS_REG,  &val, 1);
-		if (rc < 0)
-			return rc;
-
-		haptics_runtime_autosuspend_put(chip);
-		dev_dbg(chip->dev, "QCOM_SSR_BEFORE_POWERUP is handled\n");
-		break;
-	default:
-		break;
-	}
-
-	return NOTIFY_DONE;
-}
 
 static int haptics_probe(struct platform_device *pdev)
 {
@@ -8263,7 +7709,6 @@ static int haptics_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	chip->dev = &pdev->dev;
-	dev_set_drvdata(chip->dev, chip);
 	chip->regmap = dev_get_regmap(chip->dev->parent, NULL);
 	if (!chip->regmap) {
 		dev_err(chip->dev, "Get regmap failed\n");
@@ -8288,12 +7733,6 @@ static int haptics_probe(struct platform_device *pdev)
 	rc = haptics_hw_init(chip);
 	if (rc < 0) {
 		dev_err(chip->dev, "Initialize HW failed, rc = %d\n", rc);
-		return rc;
-	}
-
-	rc = haptics_runtime_pm_init(chip);
-	if (rc < 0) {
-		dev_err(chip->dev, "Runtime PM initialize failed, rc=%d\n", rc);
 		return rc;
 	}
 
@@ -8376,6 +7815,7 @@ static int haptics_probe(struct platform_device *pdev)
 		goto destroy_ff;
 	}
 
+	dev_set_drvdata(chip->dev, chip);
 	chip->hap_class.name = "qcom-haptics";
 	chip->hap_class.class_groups = hap_class_groups;
 	rc = class_register(&chip->hap_class);
@@ -8384,37 +7824,8 @@ static int haptics_probe(struct platform_device *pdev)
 		goto destroy_ff;
 	}
 
-	if (chip->hw_type >= HAP530_HV && chip->visense_enabled) {
-		rc = class_create_file(&chip->hap_class, &class_attr_i_gain_error);
-		if (rc) {
-			dev_err(chip->dev, "failed to add i_gain_error, rc=%d\n", rc);
-			goto destroy_ff;
-		}
-
-		rc = class_create_file(&chip->hap_class, &class_attr_v_gain_error);
-		if (rc) {
-			dev_err(chip->dev, "failed to add v_gain_error, rc=%d\n", rc);
-			goto remove_i_gain_error;
-		}
-	}
-
 	chip->hboost_nb.notifier_call = haptics_boost_notifier;
 	register_hboost_event_notifier(&chip->hboost_nb);
-
-	if (chip->hw_type == HAP530_HV) {
-		chip->lpass_ssr_nb.notifier_call = haptics_lpass_ssr_notifier;
-		chip->lpass_ssr_handle =
-			qcom_register_ssr_notifier("lpass", &chip->lpass_ssr_nb);
-		if (IS_ERR(chip->lpass_ssr_handle)) {
-			rc = PTR_ERR(chip->lpass_ssr_handle);
-			dev_err(chip->dev, "register SSR notifier failed, rc=%d\n", rc);
-			if (chip->visense_enabled)
-				goto remove_v_gain_error;
-			else
-				goto destroy_ff;
-		}
-	}
-
 	rc = haptics_create_debugfs(chip);
 	if (rc < 0)
 		dev_err(chip->dev, "Creating debugfs failed, rc=%d\n", rc);
@@ -8455,12 +7866,8 @@ static int haptics_probe(struct platform_device *pdev)
 #endif /* OPLUS_FEATURE_RICHTAP_SUPPORT */
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	init_proc_haptic_test();
-	if (chip->trig_support) {
-		sw_trig_init(chip);
-		device_init_wakeup(&pdev->dev, true);
-	}
 #endif
-	haptics_runtime_autosuspend(chip);
+
 	phapchip = chip;
 	return 0;
 
@@ -8468,10 +7875,6 @@ static int haptics_probe(struct platform_device *pdev)
 destroy_richtap:
 	kfree(chip->rtp_ptr);
 #endif
-remove_v_gain_error:
-	class_remove_file(&chip->hap_class, &class_attr_v_gain_error);
-remove_i_gain_error:
-	class_remove_file(&chip->hap_class, &class_attr_i_gain_error);
 destroy_ff:
 	input_ff_destroy(chip->input_dev);
 	return rc;
@@ -8484,9 +7887,6 @@ static int haptics_remove(struct platform_device *pdev)
 	phapchip = NULL;
 	if (chip->pbs_node)
 		of_node_put(chip->pbs_node);
-
-	if (chip->hw_type == HAP530_HV)
-		qcom_unregister_ssr_notifier(chip->lpass_ssr_handle, &chip->lpass_ssr_nb);
 
 	unregister_hboost_event_notifier(&chip->hboost_nb);
 	class_unregister(&chip->hap_class);
@@ -8587,39 +7987,10 @@ static int haptics_suspend_config(struct device *dev)
 	return haptics_module_enable(chip, false);
 }
 
-static int __maybe_unused haptics_runtime_suspend(struct device *dev)
-{
-	struct haptics_chip *chip = dev_get_drvdata(dev);
-
-	/*
-	 * Don't check return values, disable haptics module
-	 * to minimize the quiescent current.
-	 */
-	haptics_visense_enable(chip, false);
-	haptics_module_enable(chip, false);
-
-	return 0;
-}
-
-static int __maybe_unused haptics_runtime_resume(struct device *dev)
-{
-	struct haptics_chip *chip = dev_get_drvdata(dev);
-	int rc = 0;
-
-	rc = haptics_module_enable(chip, true);
-	if (rc < 0)
-		return rc;
-
-	return haptics_visense_enable(chip, true);
-}
-
 static int __maybe_unused haptics_suspend(struct device *dev)
 {
 	struct haptics_chip *chip = dev_get_drvdata(dev);
 	int rc = 0;
-#ifdef OPLUS_FEATURE_CHG_BASIC
-	int i;
-#endif
 
 	if (MAJOR_REV(chip->cfg_revision) == HAP_CFG_V1)
 		return 0;
@@ -8633,16 +8004,6 @@ static int __maybe_unused haptics_suspend(struct device *dev)
 		haptics_ds_suspend_config(dev);
 #endif
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
-	if(chip->trig_support) {
-		if (device_may_wakeup(dev)) {
-			for (i = 0; i < TRIG_GPIO_NUM; i++) {
-				if (gpio_is_valid(chip->trig_gpio[i]) && chip->trig_irq[i] > 0)
-					enable_irq_wake(chip->trig_irq[i]);
-			}
-		}
-	}
-#endif
 	return 0;
 }
 
@@ -8651,7 +8012,6 @@ static int __maybe_unused haptics_resume(struct device *dev)
 	struct haptics_chip *chip = dev_get_drvdata(dev);
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
-	int i;
 	if (chip->disable_pm_ops)
 		return 0;
 #endif
@@ -8665,20 +8025,6 @@ static int __maybe_unused haptics_resume(struct device *dev)
 			return rc;
 	}
 #endif
-
-#ifdef OPLUS_FEATURE_CHG_BASIC
-	if(chip->trig_support) {
-		if (device_may_wakeup(dev)){
-			for (i = 0; i < TRIG_GPIO_NUM; i++) {
-				if (gpio_is_valid(chip->trig_gpio[i]) && chip->trig_irq[i] > 0)
-					disable_irq_wake(chip->trig_irq[i]);
-			}
-		}
-	}
-#endif
-
-	if (is_haptics_runtime_pm_enabled(chip))
-		return 0;
 
 	return haptics_module_enable(chip, true);
 }
@@ -8705,9 +8051,6 @@ static int __maybe_unused haptics_restore(struct device *dev)
 	if (rc < 0)
 		return rc;
 
-	if (is_haptics_runtime_pm_enabled(chip))
-		return 0;
-
 	return haptics_module_enable(chip, true);
 
 }
@@ -8722,8 +8065,6 @@ static void haptics_shutdown(struct platform_device *pdev)
 }
 
 static const struct dev_pm_ops __maybe_unused haptics_pm_ops = {
-	.runtime_suspend = pm_ptr(haptics_runtime_suspend),
-	.runtime_resume = pm_ptr(haptics_runtime_resume),
 	.suspend = pm_ptr(haptics_suspend),
 	.resume = pm_ptr(haptics_resume),
 	.freeze = pm_ptr(haptics_freeze),

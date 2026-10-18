@@ -80,10 +80,6 @@ __xhci_sideband_remove_endpoint(struct xhci_sideband *sb, struct xhci_virt_ep *e
 	 * Issue a stop endpoint command when an endpoint is removed.
 	 * The stop ep cmd handler will handle the ring cleanup.
 	 */
-
-	if (!ep || ep->sideband != sb)
-		return;
-
 	xhci_stop_endpoint_sync(sb->xhci, ep, 0, GFP_KERNEL);
 
 	ep->sideband = NULL;
@@ -113,7 +109,6 @@ xhci_sideband_add_endpoint(struct xhci_sideband *sb,
 
 	if (!sb)
 		return -ENODEV;
-
 	mutex_lock(&sb->mutex);
 	ep_index = xhci_get_endpoint_index(&host_ep->desc);
 	ep = &sb->vdev->eps[ep_index];
@@ -163,9 +158,6 @@ xhci_sideband_remove_endpoint(struct xhci_sideband *sb,
 	struct xhci_virt_ep *ep;
 	unsigned int ep_index;
 
-	if (!sb)
-		return -ENODEV;
-
 	mutex_lock(&sb->mutex);
 	ep_index = xhci_get_endpoint_index(&host_ep->desc);
 	ep = sb->eps[ep_index];
@@ -176,8 +168,7 @@ xhci_sideband_remove_endpoint(struct xhci_sideband *sb,
 	}
 
 	__xhci_sideband_remove_endpoint(sb, ep);
-	if (ep->ring)
-		xhci_initialize_ring_info(ep->ring, 1);
+	xhci_initialize_ring_info(ep->ring, 1);
 	mutex_unlock(&sb->mutex);
 
 	return 0;
@@ -223,7 +214,6 @@ xhci_sideband_get_endpoint_buffer(struct xhci_sideband *sb,
 
 	if (!sb)
 		return NULL;
-
 	ep_index = xhci_get_endpoint_index(&host_ep->desc);
 	ep = sb->eps[ep_index];
 
@@ -255,6 +245,30 @@ xhci_sideband_get_event_buffer(struct xhci_sideband *sb)
 	return xhci_ring_to_sgtable(sb, sb->ir->event_ring);
 }
 EXPORT_SYMBOL_GPL(xhci_sideband_get_event_buffer);
+
+/**
+ * xhci_sideband_enable_interrupt - enable interrupt for secondary interrupter
+ * @sb: sideband instance for this usb device
+ * @imod_interval: number of event ring segments to allocate
+ *
+ * Enables OS owned event handling for a particular interrupter if client
+ * requests for it.  In addition, set the IMOD interval for this particular
+ * interrupter.
+ *
+ * Returns 0 on success, negative error otherwise
+ */
+int xhci_sideband_enable_interrupt(struct xhci_sideband *sb, u32 imod_interval)
+{
+	if (!sb || !sb->ir)
+		return -ENODEV;
+
+	xhci_set_interrupter_moderation(sb->ir, imod_interval);
+	sb->ir->skip_events = false;
+	xhci_enable_interrupter(sb->ir);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xhci_sideband_enable_interrupt);
 
 /**
  * xhci_sideband_create_interrupter - creates a new interrupter for this sideband
@@ -410,13 +424,8 @@ EXPORT_SYMBOL_GPL(xhci_sideband_register);
 void
 xhci_sideband_unregister(struct xhci_sideband *sb)
 {
-	struct xhci_hcd *xhci;
+	struct xhci_hcd *xhci = sb->xhci;
 	int i;
-
-	if (!sb)
-		return;
-
-	xhci = sb->xhci;
 
 	mutex_lock(&sb->mutex);
 	for (i = 0; i < EP_CTX_PER_DEV; i++)

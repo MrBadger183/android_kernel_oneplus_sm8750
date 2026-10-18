@@ -83,7 +83,7 @@
 #define USB_HSPHY_3P3_HPM_LOAD			16000	/* uA */
 #define USB_HSPHY_3P3_VOL_FSHOST		3150000 /* uV */
 
-#define USB_HSPHY_1P8_VOL_MIN			1800000 /* uV */
+#define USB_HSPHY_1P8_VOL_MIN			1704000 /* uV */
 #define USB_HSPHY_1P8_VOL_MAX			1800000 /* uV */
 #define USB_HSPHY_1P8_HPM_LOAD			19000	/* uA */
 
@@ -450,9 +450,8 @@ static int msm_hsphy_init(struct usb_phy *uphy)
 				qcom_scm_io_writel(phy->eud_reg, 0x0);
 				phy->re_enable_eud = true;
 			} else {
-				msm_hsphy_enable_power(phy, true);
-				msm_hsphy_enable_clocks(phy, true);
-				return 0;
+				ret = msm_hsphy_enable_power(phy, true);
+				return ret;
 			}
 		}
 	}
@@ -643,7 +642,6 @@ suspend:
 		}
 		phy->suspended = true;
 	} else { /* Bus resume and cable connect */
-		msm_hsphy_enable_power(phy, true);
 		msm_hsphy_enable_clocks(phy, true);
 		phy->suspended = false;
 	}
@@ -991,9 +989,15 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	phy->phy.set_power		= msm_hsphy_set_power;
 	phy->phy.type			= USB_PHY_TYPE_USB2;
 
-	ret = msm_hsphy_regulator_init(phy);
+	ret = usb_add_phy_dev(&phy->phy);
 	if (ret)
-		goto err_ret;
+		return ret;
+
+	ret = msm_hsphy_regulator_init(phy);
+	if (ret) {
+		usb_remove_phy(&phy->phy);
+		return ret;
+	}
 
 	INIT_WORK(&phy->vbus_draw_work, msm_hsphy_vbus_draw_work);
 	msm_hsphy_create_debugfs(phy);
@@ -1003,13 +1007,9 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	 * kernel boot till USB phy driver is initialized based on cable status,
 	 * keep LDOs on here.
 	 */
-	if (phy->eud_enable_reg && readl_relaxed(phy->eud_enable_reg)) {
+	if (phy->eud_enable_reg && readl_relaxed(phy->eud_enable_reg))
 		msm_hsphy_enable_power(phy, true);
-		msm_hsphy_enable_clocks(phy, true);
-	}
-
-	/* Placed at the end to ensure the probe is complete */
-	ret = usb_add_phy_dev(&phy->phy);
+	return 0;
 
 err_ret:
 	return ret;

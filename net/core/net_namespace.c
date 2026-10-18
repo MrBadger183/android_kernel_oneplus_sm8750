@@ -442,7 +442,7 @@ out_free:
 	goto out;
 }
 
-void net_passive_dec(struct net *net)
+static void net_free(struct net *net)
 {
 	if (refcount_dec_and_test(&net->passive)) {
 		kfree(rcu_access_pointer(net->gen));
@@ -459,7 +459,7 @@ void net_drop_ns(void *p)
 	struct net *net = (struct net *)p;
 
 	if (net)
-		net_passive_dec(net);
+		net_free(net);
 }
 
 struct net *copy_net_ns(unsigned long flags,
@@ -501,7 +501,7 @@ put_userns:
 		key_remove_domain(net->key_domain);
 #endif
 		put_user_ns(user_ns);
-		net_passive_dec(net);
+		net_free(net);
 dec_ucounts:
 		dec_net_namespaces(ucounts);
 		return ERR_PTR(rv);
@@ -635,7 +635,7 @@ static void cleanup_net(struct work_struct *work)
 		key_remove_domain(net->key_domain);
 #endif
 		put_user_ns(net->user_ns);
-		net_passive_dec(net);
+		net_free(net);
 	}
 }
 

@@ -39,10 +39,8 @@ void ksmbd_conn_free(struct ksmbd_conn *conn)
 	xa_destroy(&conn->sessions);
 	kvfree(conn->request_buf);
 	kfree(conn->preauth_info);
-	if (atomic_dec_and_test(&conn->refcnt)) {
-		conn->transport->ops->free_transport(conn->transport);
+	if (atomic_dec_and_test(&conn->refcnt))
 		kfree(conn);
-	}
 }
 
 /**
@@ -503,8 +501,7 @@ void ksmbd_conn_transport_destroy(void)
 {
 	mutex_lock(&init_lock);
 	ksmbd_tcp_destroy();
-	ksmbd_rdma_stop_listening();
-	stop_sessions();
 	ksmbd_rdma_destroy();
+	stop_sessions();
 	mutex_unlock(&init_lock);
 }

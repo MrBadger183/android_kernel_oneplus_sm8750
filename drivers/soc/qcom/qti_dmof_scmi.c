@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/cpu.h>
@@ -20,13 +20,26 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <uapi/linux/sched/types.h>
-#include <linux/cpu_phys_log_map.h>
 
 #define DMOF_ALGO_STR	(0x444D4F46) /* DMOF (Disable Memcpy Optimization Feature) ASCII */
+
+struct qcom_dmof_attr {
+	struct attribute		attr;
+	ssize_t (*show)(struct kobject *kobj, struct attribute *attr,
+			char *buf);
+	ssize_t (*store)(struct kobject *kobj, struct attribute *attr,
+			const char *buf, size_t count);
+};
 
 enum dmof_param_ids {
 	PARAM_DISABLE_DMOF = 1,
 };
+
+#define to_dmof_attr(_attr) \
+	container_of(_attr, struct qcom_dmof_attr, attr)
+#define DMOF_ATTR_RW(_name)						\
+static struct qcom_dmof_attr _name =					\
+	__ATTR(_name, 0644, show_##_name, store_##_name)			\
 
 enum command {
 	COMMAND_INIT = -1,
@@ -47,6 +60,7 @@ struct qcom_dmof_dd {
 	u32 *curr_val;
 	u32 *get_val;
 	enum command cmd;
+	int (*thread_fn)(void *data);
 	struct device *dev;
 	u32 val;
 	u32 req_val;
@@ -56,12 +70,13 @@ struct qcom_dmof_dd {
 static DEFINE_PER_CPU(bool, cpu_is_on);
 static DEFINE_PER_CPU(bool, need_ack);
 static struct qcom_dmof_dd *qcom_dmof_dd;
+static struct platform_device *qcom_dmof_pdev;
 
-static ssize_t disable_memcpy_optimization_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t store_disable_memcpy_optimization(struct kobject *kobj,
+		struct attribute *attr, const char *buf, size_t count)
 {
 	struct qcom_dmof_dd *fds = qcom_dmof_dd;
-	int ret;
+	int ret, err;
 	bool val;
 	int cpu, i;
 
@@ -82,9 +97,14 @@ static ssize_t disable_memcpy_optimization_store(struct device *dev,
 
 		per_cpu(need_ack, cpu) = true;
 		wake_up(&fds->waitq[cpu]);
-		wait_event_killable(fds->waitq[cpu], !per_cpu(need_ack, cpu));
-		if (fds->ret < 0)
-			goto cleanup;
+		do {
+			err = wait_event_interruptible(fds->waitq[cpu],
+						       !per_cpu(need_ack, cpu));
+			if (fds->ret < 0)
+				goto cleanup;
+
+		} while (err != 0);
+
 		fds->curr_val[cpu] = fds->req_val;
 	}
 
@@ -100,12 +120,15 @@ cleanup:
 		fds->ret = 0;
 		per_cpu(need_ack, i) = true;
 		wake_up(&fds->waitq[i]);
-		wait_event_killable(fds->waitq[i], !per_cpu(need_ack, i));
-		if (fds->ret < 0) {
-			dev_err(fds->dev, "dmof broken now:cpu:%d\n", i);
-			WARN_ON(1);
-			break;
-		}
+		do {
+			err = wait_event_interruptible(fds->waitq[i],
+						       !per_cpu(need_ack, i));
+			if (fds->ret < 0) {
+				dev_err(fds->dev, "dmof broken now:cpu:%d\n", i);
+				WARN_ON(1);
+				break;
+			}
+		} while (err != 0);
 
 		fds->curr_val[cpu] = fds->req_val;
 	}
@@ -118,12 +141,13 @@ unlock_cpu_readlock:
 	return ((ret < 0) ? ret : count);
 }
 
-static ssize_t disable_memcpy_optimization_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+static ssize_t show_disable_memcpy_optimization(struct kobject *kobj,
+				      struct attribute *attr, char *buf)
 {
 	struct qcom_dmof_dd *fds = qcom_dmof_dd;
 	int val = 1;
 	int cpu;
+	int err;
 
 	cpus_read_lock();
 	mutex_lock(&fds->lock);
@@ -134,9 +158,13 @@ static ssize_t disable_memcpy_optimization_show(struct device *dev,
 
 		per_cpu(need_ack, cpu) = true;
 		wake_up(&fds->waitq[cpu]);
-		wait_event_killable(fds->waitq[cpu], !per_cpu(need_ack, cpu));
-		if (fds->ret < 0)
-			goto cleanup;
+		do {
+			err = wait_event_interruptible(fds->waitq[cpu],
+						       !per_cpu(need_ack, cpu));
+			if (fds->ret < 0)
+				goto cleanup;
+
+		} while (err != 0);
 	}
 
 	for_each_possible_cpu(cpu) {
@@ -152,25 +180,58 @@ static ssize_t disable_memcpy_optimization_show(struct device *dev,
 cleanup:
 	mutex_unlock(&fds->lock);
 	cpus_read_unlock();
-
-	if (fds->ret < 0)
-		return fds->ret;
 	return scnprintf(buf, PAGE_SIZE, "%u\n", le32_to_cpu(fds->val));
 }
 
-static DEVICE_ATTR_RW(disable_memcpy_optimization);
+DMOF_ATTR_RW(disable_memcpy_optimization);
 
-static const struct device_attribute *dmof_attrs[] = {
-	&dev_attr_disable_memcpy_optimization,
+static struct attribute *dmof_settings_attrs[] = {
+	&disable_memcpy_optimization.attr,
 	NULL,
+};
+ATTRIBUTE_GROUPS(dmof_settings);
+
+static ssize_t attr_show(struct kobject *kobj, struct attribute *attr,
+			 char *buf)
+{
+	struct qcom_dmof_attr *dmof_attr = to_dmof_attr(attr);
+	ssize_t ret = -EIO;
+
+	if (dmof_attr->show)
+		ret = dmof_attr->show(kobj, attr, buf);
+
+	return ret;
+}
+
+static ssize_t attr_store(struct kobject *kobj, struct attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct qcom_dmof_attr *dmof_attr = to_dmof_attr(attr);
+	ssize_t ret = -EIO;
+
+	if (dmof_attr->store)
+		ret = dmof_attr->store(kobj, attr, buf, count);
+
+	return ret;
+}
+
+static const struct sysfs_ops dmof_sysfs_ops = {
+	.show	= attr_show,
+	.store	= attr_store,
+};
+
+static const struct kobj_type dmof_kobj_ktype = {
+	.sysfs_ops		= &dmof_sysfs_ops,
+	.default_groups		= dmof_settings_groups,
 };
 
 static int qcom_dmof_kthread_fn(void *data)
 {
 	struct qcom_dmof_dd *fds = qcom_dmof_dd;
-	u32 cpu = *(u32 *)data;
+	u32 cpu;
 	/* [0] is for cpu id and [1] is for enable/disable dmof */
 	u32 buf[2];
+	int ret;
 
 	while (!(kthread_should_stop())) {
 		if (kthread_should_park()) {
@@ -178,15 +239,20 @@ static int qcom_dmof_kthread_fn(void *data)
 			continue;
 		}
 
+		preempt_disable();
+		cpu = smp_processor_id();
+		preempt_enable();
 repeat:
-		wait_event_killable(fds->waitq[cpu], per_cpu(need_ack, cpu));
-		if (fds->ret < 0)
-			break;
+		do {
+			ret = wait_event_interruptible(fds->waitq[cpu],
+						       per_cpu(need_ack, cpu));
+		} while (ret != 0);
 
-		BUG_ON(get_cpu() != cpu);
-		put_cpu();
+		BUG_ON(cpu != *(int *)data);
 
-		buf[0] = cpu_logical_to_phys(cpu);
+		__set_current_state(TASK_RUNNING);
+
+		buf[0] = cpu;
 		switch (fds->cmd) {
 		case COMMAND_INIT:
 			break;
@@ -216,7 +282,7 @@ repeat:
 		}
 	}
 
-	return 0;
+	return ret;
 }
 
 static void smp_destroy_threads(struct qcom_dmof_dd *fds)
@@ -238,12 +304,12 @@ static int smp_create_thread(struct qcom_dmof_dd *fds, u32 cpu)
 	struct task_struct *tsk;
 	u32 *td;
 
-	td = devm_kzalloc(fds->dev, sizeof(*td), GFP_KERNEL);
+	td = kzalloc_node(sizeof(*td), GFP_KERNEL, cpu_to_node(cpu));
 	if (!td)
 		return -ENOMEM;
 
 	*td = cpu;
-	tsk = kthread_create_on_cpu(qcom_dmof_kthread_fn, td, cpu, fds->thread_comm);
+	tsk = kthread_create_on_cpu(fds->thread_fn, td, cpu, fds->thread_comm);
 	if (IS_ERR(tsk))
 		return PTR_ERR(tsk);
 
@@ -270,12 +336,9 @@ static int cpu_down_notifier(unsigned int cpu)
 static int cpu_up_notifier(unsigned int cpu)
 {
 	struct qcom_dmof_dd *fds = qcom_dmof_dd;
-	struct task_struct *tsk;
+	int err;
 
 	mutex_lock(&fds->lock);
-	tsk = fds->store[cpu];
-	kthread_bind_mask(tsk, cpumask_of(cpu));
-
 	if (fds->curr_val[cpu] == fds->val)
 		goto cpu_on;
 
@@ -283,10 +346,15 @@ static int cpu_up_notifier(unsigned int cpu)
 	fds->ret = 0;
 	per_cpu(need_ack, cpu) = true;
 	wake_up(&fds->waitq[cpu]);
+	do {
+		err = wait_event_interruptible(fds->waitq[cpu],
+					       !per_cpu(need_ack, cpu));
+		if (fds->ret < 0)
+			break;
 
-	wait_event_killable(fds->waitq[cpu], !per_cpu(need_ack, cpu));
-	if (fds->ret >= 0)
-		fds->curr_val[cpu] = fds->val;
+	} while (err != 0);
+
+	fds->curr_val[cpu] = fds->val;
 
 cpu_on:
 	per_cpu(need_ack, cpu) = false;
@@ -316,12 +384,17 @@ static int qcom_dmof_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 
 	scmi_dev = get_qcom_scmi_device();
-	if (IS_ERR(scmi_dev))
-		return dev_err_probe(&pdev->dev, PTR_ERR(scmi_dev), "unable to get scmi_dev");
+	if (IS_ERR(scmi_dev)) {
+		ret = PTR_ERR(scmi_dev);
+		if (ret != -EPROBE_DEFER)
+			dev_err(&pdev->dev, "Error getting scmi_dev ret = %d\n", ret);
+		return ret;
+	}
 
 	ops = scmi_dev->handle->devm_protocol_get(scmi_dev, QCOM_SCMI_VENDOR_PROTOCOL, &ph);
 	if (IS_ERR(ops)) {
 		ret = PTR_ERR(ops);
+		ops = NULL;
 		return ret;
 	}
 
@@ -329,10 +402,10 @@ static int qcom_dmof_probe(struct platform_device *pdev)
 	qcom_dmof_dd->dev = &pdev->dev;
 	qcom_dmof_dd->ops = ops;
 	qcom_dmof_dd->ph = ph;
+	qcom_dmof_dd->thread_fn = qcom_dmof_kthread_fn;
 	qcom_dmof_dd->thread_comm = "cpudmof/%u";
 	qcom_dmof_dd->cmd = COMMAND_INIT;
 	qcom_dmof_dd->ret = 0;
-	qcom_dmof_dd->val = 1;
 
 	qcom_dmof_dd->waitq = devm_kcalloc(&pdev->dev, num_possible_cpus(),
 					   sizeof(wait_queue_head_t), GFP_KERNEL);
@@ -390,27 +463,61 @@ static int qcom_dmof_probe(struct platform_device *pdev)
 						   cpu_up_notifier, cpu_down_notifier);
 	cpus_read_unlock();
 
-	ret = device_create_file(&pdev->dev, dmof_attrs[0]);
+	ret = kobject_init_and_add(&qcom_dmof_dd->kobj, &dmof_kobj_ktype,
+				   &dev_root->kobj, "dmof");
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to init dmof kobj: %d\n", ret);
+		smp_destroy_threads(qcom_dmof_dd);
+		kobject_put(&qcom_dmof_dd->kobj);
+	}
 
 	put_device(dev_root);
 
 	return 0;
 }
 
-static const struct of_device_id qcom_dmof_match[] = {
-	{ .compatible = "qcom,dmof"},
-	{}
-};
+static int qcom_dmof_remove(struct platform_device *pdev)
+{
+	kobject_put(&qcom_dmof_dd->kobj);
+
+	return 0;
+}
 
 static struct platform_driver qcom_dmof_driver = {
-	.probe = qcom_dmof_probe,
-	.driver         = {
-		.name   = "qcom-dmof",
-		.of_match_table = qcom_dmof_match,
+	.driver = {
+		.name = "qcom-dmof",
 	},
+	.probe = qcom_dmof_probe,
+	.remove = qcom_dmof_remove,
 };
 
-module_platform_driver(qcom_dmof_driver);
+static int __init qcom_dmof_scmi_driver_init(void)
+{
+	int err;
+
+	err = platform_driver_register(&qcom_dmof_driver);
+	if (err)
+		return err;
+
+	qcom_dmof_pdev = platform_device_register_data(NULL, "qcom-dmof",
+						       PLATFORM_DEVID_NONE, NULL, 0);
+	if (IS_ERR(qcom_dmof_pdev)) {
+		pr_err("failed to register qcom-dmof platform device\n");
+		platform_driver_unregister(&qcom_dmof_driver);
+		return PTR_ERR(qcom_dmof_pdev);
+	}
+
+	return 0;
+}
+
+module_init(qcom_dmof_scmi_driver_init)
+
+static void __exit qcom_dmof_scmi_driver_exit(void)
+{
+	platform_device_unregister(qcom_dmof_pdev);
+	platform_driver_unregister(&qcom_dmof_driver);
+}
+module_exit(qcom_dmof_scmi_driver_exit)
 
 MODULE_SOFTDEP("pre: qcom_scmi_client");
 MODULE_DESCRIPTION("QTI DMOF SCMI driver");

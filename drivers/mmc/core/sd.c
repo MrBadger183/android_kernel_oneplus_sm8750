@@ -59,7 +59,7 @@ static const unsigned int sd_au_size[] = {
 #define UNSTUFF_BITS(resp,start,size)					\
 	({								\
 		const int __size = size;				\
-		const u32 __mask = (__size < 32 ? 1 << __size : 0) - 1;	\
+		const u32 __mask = __size < 32 ? ((1U << __size) - 1) : ~0U; \
 		const int __off = 3 - ((start) / 32);			\
 		const int __shft = (start) & 31;			\
 		u32 __res;						\
@@ -619,29 +619,6 @@ static int sd_set_current_limit(struct mmc_card *card, u8 *status)
 }
 
 /*
- * Determine if the card should tune or not.
- */
-static bool mmc_sd_use_tuning(struct mmc_card *card)
-{
-	/*
-	 * SPI mode doesn't define CMD19 and tuning is only valid for SDR50 and
-	 * SDR104 mode SD-cards. Note that tuning is mandatory for SDR104.
-	 */
-	if (mmc_host_is_spi(card->host))
-		return false;
-
-	switch (card->host->ios.timing) {
-	case MMC_TIMING_UHS_SDR50:
-	case MMC_TIMING_UHS_SDR104:
-		return true;
-	case MMC_TIMING_UHS_DDR50:
-		return !mmc_card_no_uhs_ddr50_tuning(card);
-	}
-
-	return false;
-}
-
-/*
  * UHS-I specific initialization procedure
  */
 static int mmc_sd_init_uhs_card(struct mmc_card *card)
@@ -684,7 +661,14 @@ static int mmc_sd_init_uhs_card(struct mmc_card *card)
 	if (err)
 		goto out;
 
-	if (mmc_sd_use_tuning(card)) {
+	/*
+	 * SPI mode doesn't define CMD19 and tuning is only valid for SDR50 and
+	 * SDR104 mode SD-cards. Note that tuning is mandatory for SDR104.
+	 */
+	if (!mmc_host_is_spi(card->host) &&
+		(card->host->ios.timing == MMC_TIMING_UHS_SDR50 ||
+		 card->host->ios.timing == MMC_TIMING_UHS_DDR50 ||
+		 card->host->ios.timing == MMC_TIMING_UHS_SDR104)) {
 		err = mmc_execute_tuning(card);
 
 		/*

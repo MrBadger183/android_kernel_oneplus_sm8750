@@ -628,7 +628,7 @@ static int smmu_tlb_inv_range_smmu(struct hyp_arm_smmu_v3_device *smmu,
 	size_t inv_range = granule;
 	struct hyp_arm_smmu_v3_domain *smmu_domain = domain->priv;
 
-	kvm_iommu_lock(&smmu->iommu);
+	hyp_spin_lock(&smmu->iommu.lock);
 	if (smmu->iommu.power_is_off && smmu->caches_clean_on_power_on)
 		goto out_ret;
 
@@ -689,7 +689,7 @@ static int smmu_tlb_inv_range_smmu(struct hyp_arm_smmu_v3_device *smmu,
 
 	ret = smmu_sync_cmd(smmu);
 out_ret:
-	kvm_iommu_unlock(&smmu->iommu);
+	hyp_spin_unlock(&smmu->iommu.lock);
 	return ret;
 }
 
@@ -1089,7 +1089,7 @@ static int smmu_attach_dev(struct kvm_hyp_iommu *iommu, struct kvm_hyp_iommu_dom
 	struct domain_iommu_node *iommu_node = NULL;
 
 	hyp_write_lock(&smmu_domain->lock);
-	kvm_iommu_lock(iommu);
+	hyp_spin_lock(&iommu->lock);
 	dst = smmu_get_ste_ptr(smmu, sid);
 	if (!dst)
 		goto out_unlock;
@@ -1199,7 +1199,7 @@ static int smmu_detach_dev(struct kvm_hyp_iommu *iommu, struct kvm_hyp_iommu_dom
 	u64 *cd_table, *cd;
 
 	hyp_write_lock(&smmu_domain->lock);
-	kvm_iommu_lock(iommu);
+	hyp_spin_lock(&iommu->lock);
 	dst = smmu_get_ste_ptr(smmu, sid);
 	if (!dst)
 		goto out_unlock;
@@ -1278,7 +1278,7 @@ out_skip_ste:
 
 	smmu_put_ref_domain(smmu, smmu_domain);
 out_unlock:
-	kvm_iommu_unlock(iommu);
+	hyp_spin_unlock(&iommu->lock);
 	hyp_write_unlock(&smmu_domain->lock);
 	return ret;
 }
@@ -1436,20 +1436,14 @@ static void kvm_iommu_unmap_walker(struct io_pgtable_ctxt *ctxt)
 	struct kvm_iommu_walk_data *data = (struct kvm_iommu_walk_data *)ctxt->arg;
 	struct kvm_iommu_paddr_cache *cache = data->cache;
 
+	cache->paddr[cache->ptr] = ctxt->addr;
+	cache->pgsize[cache->ptr++] = ctxt->size;
+
 	/*
 	 * It is guaranteed unmap is called with max of the cache size,
 	 * see kvm_iommu_unmap_pages()
 	 */
-	cache->paddr[cache->ptr] = ctxt->addr;
-	cache->pgsize[cache->ptr++] = ctxt->size;
-
-	/* Make more space. */
-	if(cache->ptr == KVM_IOMMU_PADDR_CACHE_MAX) {
-		/* Must invalidate TLB first. */
-		smmu_iotlb_sync(data->cookie, data->iotlb_gather);
-		iommu_iotlb_gather_init(data->iotlb_gather);
-		kvm_iommu_flush_unmap_cache(cache);
-	}
+	WARN_ON(cache->ptr == KVM_IOMMU_PADDR_CACHE_MAX);
 }
 
 static size_t smmu_unmap_pages(struct kvm_hyp_iommu_domain *domain, unsigned long iova,

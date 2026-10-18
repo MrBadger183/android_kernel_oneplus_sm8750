@@ -166,7 +166,6 @@ struct msm_eusb2_phy {
 
 	struct regulator	*vdd;
 	struct regulator	*vdda12;
-	struct regulator	*vdd_refgen;
 	int			vdd_levels[3]; /* none, low, high */
 
 	bool			clocks_enabled;
@@ -281,27 +280,6 @@ static int msm_eusb2_phy_power(struct msm_eusb2_phy *phy, bool on)
 		goto unset_vdda12;
 	}
 
-	if (phy->vdd_refgen) {
-		ret = regulator_set_load(phy->vdd_refgen, USB_HSPHY_VDD_HPM_LOAD);
-		if (ret < 0) {
-			dev_err(phy->phy.dev, "Unable to set HPM of vdd_refgen:%d\n", ret);
-			goto disable_vdda12;
-		}
-
-		ret = regulator_set_voltage(phy->vdd_refgen, phy->vdd_levels[1],
-					phy->vdd_levels[2]);
-		if (ret) {
-			dev_err(phy->phy.dev,
-				"Unable to set voltage for hsusb vdd_refgen\n");
-			goto put_vdd_refgen_lpm;
-		}
-
-		ret = regulator_enable(phy->vdd_refgen);
-		if (ret) {
-			dev_err(phy->phy.dev, "Unable to enable VDD refgen\n");
-			goto unconfig_vdd_refgen;
-		}
-	}
 	/* Make sure all the writes are processed before setting EUD_DETECT */
 	mb();
 	/* Set eud_detect_reg after powering on eUSB PHY rails to bring EUD out of reset */
@@ -318,25 +296,6 @@ clear_eud_det:
 	/* Make sure clearing EUD_DETECT is completed before turning off the regulators */
 	mb();
 
-	if (phy->vdd_refgen) {
-		ret = regulator_disable(phy->vdd_refgen);
-		if (ret)
-			dev_err(phy->phy.dev, "Unable to disable vdd_refgen:%d\n", ret);
-
-unconfig_vdd_refgen:
-		ret = regulator_set_voltage(phy->vdd_refgen, phy->vdd_levels[0],
-				    phy->vdd_levels[2]);
-		if (ret)
-			dev_err(phy->phy.dev,
-				"unable to set voltage for hsusb vdd_refgen\n");
-
-put_vdd_refgen_lpm:
-		ret = regulator_set_load(phy->vdd_refgen, 0);
-		if (ret < 0)
-			dev_err(phy->phy.dev, "Unable to set LPM of vdd_refgen\n");
-	}
-
-disable_vdda12:
 	ret = regulator_disable(phy->vdda12);
 	if (ret)
 		dev_err(phy->phy.dev, "Unable to disable vdda12:%d\n", ret);
@@ -808,9 +767,6 @@ static int msm_eusb2_phy_init(struct usb_phy *uphy)
 
 	msm_eusb2_write_readback(phy->base, USB_PHY_HS_PHY_CTRL2,
 			USB2_SUSPEND_N_SEL, 0);
-
-	msm_eusb2_write_readback(phy->base, USB_PHY_CFG0,
-			CMN_CTRL_OVERRIDE_EN, 0x00);
 	return 0;
 }
 
@@ -1028,7 +984,7 @@ static int msm_eusb2_phy_probe(struct platform_device *pdev)
 		goto err_ret;
 	}
 
-	phy->ref_clk = devm_clk_get_optional(dev, "ref_clk");
+	phy->ref_clk = devm_clk_get(dev, "ref_clk");
 	if (IS_ERR(phy->ref_clk)) {
 		dev_err(dev, "clk get failed for ref_clk\n");
 		ret = PTR_ERR(phy->ref_clk);
@@ -1061,14 +1017,6 @@ static int msm_eusb2_phy_probe(struct platform_device *pdev)
 		dev_err(dev, "unable to get vdda12 supply\n");
 		ret = PTR_ERR(phy->vdda12);
 		goto err_ret;
-	}
-
-	if (of_property_read_bool(dev->of_node, "vdd_refgen-supply")) {
-		phy->vdd_refgen = devm_regulator_get_optional(dev, "vdd_refgen");
-		if (IS_ERR(phy->vdd_refgen)) {
-			phy->vdd_refgen = NULL;
-			dev_err(dev, "unable to get refgen supply\n");
-		}
 	}
 
 	phy->param_override_seq_cnt = of_property_count_elems_of_size(
@@ -1112,6 +1060,10 @@ static int msm_eusb2_phy_probe(struct platform_device *pdev)
 	phy->phy.set_power		= msm_eusb2_phy_set_power;
 	phy->phy.type			= USB_PHY_TYPE_USB2;
 
+	ret = usb_add_phy_dev(&phy->phy);
+	if (ret)
+		goto err_ret;
+
 	INIT_WORK(&phy->vbus_draw_work, msm_eusb2_phy_vbus_draw_work);
 	msm_eusb2_phy_create_debugfs(phy);
 
@@ -1126,8 +1078,7 @@ static int msm_eusb2_phy_probe(struct platform_device *pdev)
 		msm_eusb2_repeater_reset_and_init(phy);
 	}
 
-	/* Placed at the end to ensure the probe is complete */
-	ret = usb_add_phy_dev(&phy->phy);
+	return 0;
 
 err_ret:
 	return ret;

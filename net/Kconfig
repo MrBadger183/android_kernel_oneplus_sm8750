@@ -290,21 +290,15 @@ config MAX_SKB_FRAGS
 	  If unsure, say 17.
 
 config RPS
-	bool "Receive packet steering"
+	bool
 	depends on SMP && SYSFS
 	default y
-	help
-	  Software receive side packet steering (RPS) distributes the
-	  load of received packet processing across multiple CPUs.
 
 config RFS_ACCEL
-	bool "Hardware acceleration of RFS"
+	bool
 	depends on RPS
 	select CPU_RMAP
 	default y
-	help
-	  Allowing drivers for multiqueue hardware with flow filter tables to
-	  accelerate RFS.
 
 config SOCK_RX_QUEUE_MAPPING
 	bool
@@ -340,7 +334,6 @@ config NET_RX_BUSY_POLL
 
 config BQL
 	bool
-	prompt "Enable Byte Queue Limits"
 	depends on SYSFS
 	select DQL
 	default y
@@ -357,7 +350,7 @@ config BPF_STREAM_PARSER
 	  BPF_MAP_TYPE_SOCKMAP.
 
 config NET_FLOW_LIMIT
-	bool "Net flow limit"
+	bool
 	depends on RPS
 	default y
 	help

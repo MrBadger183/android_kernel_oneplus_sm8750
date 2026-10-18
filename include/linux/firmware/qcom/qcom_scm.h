@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2010-2015, 2018-2019 The Linux Foundation. All rights reserved.
  * Copyright (C) 2015 Linaro Ltd.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __QCOM_SCM_H
 #define __QCOM_SCM_H
@@ -80,13 +80,6 @@ enum qcom_scm_ice_cipher {
 	QCOM_SCM_ICE_CIPHER_AES_256_CBC = 4,
 };
 
-enum qcom_scm_custom_reset_type {
-	QCOM_SCM_RST_NONE,
-	QCOM_SCM_RST_SHUTDOWN_TO_RTC_MODE = 0x80000005,
-	QCOM_SCM_RST_SHUTDOWN_TO_TWM_MODE,
-	QCOM_SCM_RST_MAX
-};
-
 #define QCOM_SCM_PERM_READ       0x4
 #define QCOM_SCM_PERM_WRITE      0x2
 #define QCOM_SCM_PERM_EXEC       0x1
@@ -158,7 +151,6 @@ extern int qcom_scm_spin_cpu(void);
 extern void qcom_scm_set_download_mode(enum qcom_download_mode mode);
 extern int qcom_scm_get_download_mode(unsigned int *mode);
 extern int qcom_scm_config_cpu_errata(void);
-extern void qcom_scm_phy_update_scm_level_shifter(u32 val);
 
 struct qcom_scm_pas_metadata {
 	void *ptr;
@@ -274,7 +266,6 @@ extern int qcom_scm_query_encrypted_log_feature(u64 *enabled);
 extern int qcom_scm_request_encrypted_log(phys_addr_t buf, size_t len,
 		uint32_t log_id, bool is_full_encrypted_tz_logs_supported,
 		bool is_full_encrypted_tz_logs_enabled);
-extern int qcom_scm_query_log_status(u64 *status);
 
 extern int qcom_scm_invoke_smc(phys_addr_t in_buf, size_t in_buf_size,
 		phys_addr_t out_buf, size_t out_buf_size, int32_t *result,
@@ -292,7 +283,5 @@ extern int qcom_scm_lmh_profile_change(u32 profile_id);
 extern bool qcom_scm_lmh_dcvsh_available(void);
 
 extern int qcom_scm_tsens_reinit(int *tsens_ret);
-extern int gh_scm_assign_mem(phys_addr_t mem_addr, size_t mem_sz, u64 *src,
-			const struct qcom_scm_vmperm *dstvm,
-			unsigned int nr_dst_vmperm);
+
 #endif

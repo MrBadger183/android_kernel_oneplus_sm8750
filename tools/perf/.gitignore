@@ -45,5 +45,7 @@ libbpf/
 libperf/
 libsubcmd/
 libsymbol/
+libtraceevent/
+libtraceevent_plugins/
 fixdep
 Documentation/doc.dep

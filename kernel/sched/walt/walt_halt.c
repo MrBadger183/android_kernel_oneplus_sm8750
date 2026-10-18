@@ -9,6 +9,15 @@
 #include <walt.h>
 #include "trace.h"
 
+#ifdef CONFIG_OPLUS_ADD_CORE_CTRL_MASK
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+#include <../kernel/oplus_cpu/sched/frame_boost/frame_group.h>
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <../kernel/oplus_cpu/sched/sched_assist/sa_fair.h>
+#endif
+#endif /* CONFIG_OPLUS_ADD_CORE_CTRL_MASK */
+
 #ifdef CONFIG_HOTPLUG_CPU
 
 enum pause_type {
@@ -116,10 +125,14 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf)
 		 * There's this thread running, bail when that's the only
 		 * remaining thread:
 		 */
-		if (rq->nr_running == 1)
+		/* When ext enabled, tasks may exist in gloal rq */
+		/*if (rq->nr_running == 1)
 			break;
+		*/
 
 		next = pick_migrate_task(rq);
+		if (next == rq->idle)
+			break;
 
 		/*
 		 * Argh ... no iterator for tasks, we need to remove the
@@ -293,7 +306,7 @@ void restrict_cpus_and_freq(struct cpumask *cpus)
 
 struct task_struct *walt_drain_thread;
 
-static int halt_cpus(struct cpumask *cpus, enum pause_type type, enum pause_client client)
+static int halt_cpus(struct cpumask *cpus, enum pause_type type)
 {
 	int cpu;
 	int ret = 0;
@@ -336,13 +349,13 @@ static int halt_cpus(struct cpumask *cpus, enum pause_type type, enum pause_clie
 		wake_up_process(walt_drain_thread);
 	}
 out:
-	trace_halt_cpus(cpus, start_time, 1, ret, client);
+	trace_halt_cpus(cpus, start_time, 1, ret);
 
 	return ret;
 }
 
 /* start the cpus again, and kick them to balance */
-static int start_cpus(struct cpumask *cpus, enum pause_type type, enum pause_client client)
+static int start_cpus(struct cpumask *cpus, enum pause_type type)
 {
 	u64 start_time = sched_clock();
 	struct halt_cpu_state *halt_cpu_state;
@@ -369,7 +382,7 @@ static int start_cpus(struct cpumask *cpus, enum pause_type type, enum pause_cli
 
 	restrict_cpus_and_freq(cpus);
 
-	trace_halt_cpus(cpus, start_time, 0, 0, client);
+	trace_halt_cpus(cpus, start_time, 0, 0);
 
 	return 0;
 }
@@ -422,7 +435,7 @@ static int walt_halt_cpus(struct cpumask *cpus, enum pause_client client, enum p
 		goto unlock;
 	}
 
-	ret = halt_cpus(cpus, type, client);
+	ret = halt_cpus(cpus, type);
 
 	if (ret < 0)
 		pr_debug("halt_cpus failure ret=%d cpus=%*pbl\n", ret,
@@ -465,7 +478,7 @@ static int walt_start_cpus(struct cpumask *cpus, enum pause_client client, enum 
 	/* remove cpus that should still be halted */
 	update_halt_cpus(cpus, type);
 
-	ret = start_cpus(cpus, type, client);
+	ret = start_cpus(cpus, type);
 
 	if (ret < 0) {
 		pr_debug("halt_cpus failure ret=%d cpus=%*pbl\n", ret,
@@ -701,6 +714,15 @@ void walt_halt_init(void)
 	}
 
 	sched_setscheduler_nocheck(walt_drain_thread, SCHED_FIFO, &param);
+
+#ifdef CONFIG_OPLUS_ADD_CORE_CTRL_MASK
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	init_fbg_halt_mask(&__cpu_halt_mask);
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	init_ux_halt_mask(&__cpu_halt_mask);
+#endif
+#endif /* CONFIG_OPLUS_ADD_CORE_CTRL_MASK */
 
 	register_trace_android_rvh_get_nohz_timer_target(android_rvh_get_nohz_timer_target, NULL);
 	register_trace_android_rvh_set_cpus_allowed_by_task(

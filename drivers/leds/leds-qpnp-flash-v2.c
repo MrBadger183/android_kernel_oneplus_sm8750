@@ -1112,19 +1112,6 @@ static int is_usb_psy_available(struct qpnp_flash_led *led)
 	return 0;
 }
 
-static int is_batt_psy_available(struct qpnp_flash_led *led)
-{
-	if (!led->batt_psy) {
-		led->batt_psy = power_supply_get_by_name("battery");
-		if (!led->batt_psy) {
-			pr_err_ratelimited("Couldn't get batt_psy\n");
-			return -ENODEV;
-		}
-	}
-
-	return 0;
-}
-
 #define CHGBST_EFFICIENCY		800LL
 #define CHGBST_FLASH_VDIP_MARGIN	10000
 #define VIN_FLASH_UV			5000000
@@ -1152,85 +1139,40 @@ static int qpnp_flash_led_calc_bharger_max_current(struct qpnp_flash_led *led,
 	}
 	otg_enable = pval.intval;
 
-
-
-	if (led->pdata->use_qti_battery_interface) {
-		/* RESISTANCE = esr_uohm + rslow_uohm */
-		rc = qti_battery_charger_get_prop("battery",
-				BATTERY_RESISTANCE, &rbatt_uohm);
-		if (rc < 0) {
-			pr_err("Unable to read battery resistance, rc=%d\n", rc);
-			return rc;
-		}
-
-		/* If no battery is connected, return max possible flash current */
-		if (!rbatt_uohm) {
-			*max_current = (otg_enable == POWER_SUPPLY_SCOPE_SYSTEM) ?
-				       BHARGER_FLASH_LED_WITH_OTG_MAX_TOTAL_CURRENT_MA :
-				       BHARGER_FLASH_LED_MAX_TOTAL_CURRENT_MA;
-			return 0;
-		}
-
-		rc = is_batt_psy_available(led);
-		if (rc < 0)
-			return rc;
-
-		rc = power_supply_get_property(led->batt_psy,
-			POWER_SUPPLY_PROP_VOLTAGE_OCV, &pval);
-		if (rc < 0) {
-			pr_err("Unable to read OCV, rc=%d\n", rc);
-			return rc;
-		}
-
-		ocv_uv = pval.intval;
-
-		rc = power_supply_get_property(led->batt_psy,
-			POWER_SUPPLY_PROP_CURRENT_NOW, &pval);
-
-		if (rc < 0) {
-			pr_err("Unable to read current, rc=%d\n", rc);
-			return rc;
-		}
-
-		ibat_now = -(pval.intval);
-	} else {
-
-		/* RESISTANCE = esr_uohm + rslow_uohm */
-		rc = qpnp_flash_iio_getprop(led, RBATT, &rbatt_uohm);
-		/* Do not return error if the QG driver is not probed */
-		if (rc == -EPROBE_DEFER) {
-			*max_current = FLASH_LED_MAX_TOTAL_CURRENT_MA;
-			return 0;
-		} else if (rc < 0) {
-			pr_err("Unable to read battery resistance, rc=%d\n", rc);
-			return rc;
-		}
-
-		/* If no battery is connected, return max possible flash current */
-		if (!rbatt_uohm) {
-			*max_current = (otg_enable == POWER_SUPPLY_SCOPE_SYSTEM) ?
-				       BHARGER_FLASH_LED_WITH_OTG_MAX_TOTAL_CURRENT_MA :
-				       BHARGER_FLASH_LED_MAX_TOTAL_CURRENT_MA;
-			return 0;
-		}
-
-		rc = qpnp_flash_iio_getprop(led, OCV, &ocv_uv);
-		if (rc < 0) {
-			pr_err("Unable to read OCV, rc=%d\n", rc);
-			return rc;
-		}
-
-		rc = qpnp_flash_iio_getprop(led, IBAT, &ibat_now);
-		if (rc < 0) {
-			pr_err("Unable to read current, rc=%d\n", rc);
-			return rc;
-		}
+	/* RESISTANCE = esr_uohm + rslow_uohm */
+	rc = qpnp_flash_iio_getprop(led, RBATT, &rbatt_uohm);
+	/* Do not return error if the QG driver is not probed */
+	if (rc == -EPROBE_DEFER) {
+		*max_current = FLASH_LED_MAX_TOTAL_CURRENT_MA;
+		return 0;
+	} else if (rc < 0) {
+		pr_err("Unable to read battery resistance, rc=%d\n", rc);
+		return rc;
 	}
 
+	/* If no battery is connected, return max possible flash current */
+	if (!rbatt_uohm) {
+		*max_current = (otg_enable == POWER_SUPPLY_SCOPE_SYSTEM) ?
+			       BHARGER_FLASH_LED_WITH_OTG_MAX_TOTAL_CURRENT_MA :
+			       BHARGER_FLASH_LED_MAX_TOTAL_CURRENT_MA;
+		return 0;
+	}
+
+	rc = qpnp_flash_iio_getprop(led, OCV, &ocv_uv);
+	if (rc < 0) {
+		pr_err("Unable to read OCV, rc=%d\n", rc);
+		return rc;
+	}
+
+	rc = qpnp_flash_iio_getprop(led, IBAT, &ibat_now);
+	if (rc < 0) {
+		pr_err("Unable to read current, rc=%d\n", rc);
+		return rc;
+	}
 
 	bst_pwm_ovrhd_uv = led->pdata->bst_pwm_ovrhd_uv;
 
-	rc = power_supply_get_property(led->usb_psy, POWER_SUPPLY_PROP_ONLINE,
+	rc = power_supply_get_property(led->usb_psy, POWER_SUPPLY_PROP_PRESENT,
 							&pval);
 	if (rc < 0) {
 		pr_err("usb psy does not support usb present, rc=%d\n", rc);
@@ -1833,11 +1775,7 @@ static int qpnp_flash_led_regulator_control(struct led_classdev *led_cdev,
 	if (options & ENABLE_REGULATOR) {
 		if (led->pmic_type == PMI632) {
 			val = 1;
-			if (led->pdata->use_qti_battery_interface)
-				rc = qti_battery_charger_set_prop("usb", FLASH_ACTIVE, val);
-			else
-				rc = qpnp_flash_iio_setprop(led, F_ACTIVE, val);
-
+			rc = qpnp_flash_iio_setprop(led, F_ACTIVE, val);
 			if (rc < 0) {
 				pr_err("Failed to set FLASH_ACTIVE on charger rc=%d\n",
 									rc);
@@ -1856,11 +1794,7 @@ static int qpnp_flash_led_regulator_control(struct led_classdev *led_cdev,
 	if (options & DISABLE_REGULATOR) {
 		if (led->pmic_type == PMI632) {
 			val = 0;
-			if (led->pdata->use_qti_battery_interface)
-				rc = qti_battery_charger_set_prop("usb", FLASH_ACTIVE, val);
-			else
-				rc = qpnp_flash_iio_setprop(led, F_ACTIVE, val);
-
+			rc = qpnp_flash_iio_setprop(led, F_ACTIVE, val);
 			if (rc < 0) {
 				pr_err("Failed to set FLASH_ACTIVE on charger rc=%d\n",
 									rc);
@@ -3241,10 +3175,10 @@ sysfs_fail:
 					&qpnp_flash_led_attrs[j].attr);
 	}
 
-	j = led->num_snodes;
+	i = led->num_snodes;
 error_switch_register:
-	while (j > 0)
-		led_classdev_unregister(&led->snode[--j].cdev);
+	while (i > 0)
+		led_classdev_unregister(&led->snode[--i].cdev);
 	i = led->num_fnodes;
 error_led_register:
 	while (i > 0)

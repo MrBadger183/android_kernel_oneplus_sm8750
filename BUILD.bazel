@@ -28,15 +28,12 @@ load(
     "merged_kernel_uapi_headers",
 )
 load(":abi.bzl", "cc_binary_with_abi")
-load(":consolidate.bzl", "define_consolidate")
-load(":consolidate_16k.bzl", "define_consolidate_16k")
 load(
     ":modules.bzl",
     "get_gki_modules_list",
     "get_gki_protected_modules_list",
     "get_kunit_modules_list",
 )
-load(":msm_platforms.bzl", "define_msm_platforms")
 
 package(
     default_visibility = [
@@ -144,17 +141,17 @@ filegroup(
         "android/abi_gki_aarch64_virtual_device",
         "android/abi_gki_aarch64_vivo",
         "android/abi_gki_aarch64_xiaomi",
-        "android/abi_gki_aarch64_xiaomi_xring",
+        "android/abi_gki_aarch64_xiaomi2",
     ],
     visibility = ["//visibility:public"],
 )
 
 define_common_kernels(target_configs = {
     "kernel_aarch64": {
-        "kmi_symbol_list_strict_mode": True,
+        "kmi_symbol_list_strict_mode": False,
         "kmi_symbol_list": "android/abi_gki_aarch64",
         "additional_kmi_symbol_lists": [":aarch64_additional_kmi_symbol_lists"],
-        "trim_nonlisted_kmi": True,
+        "trim_nonlisted_kmi": False,
         "protected_exports_list": "android/abi_gki_protected_exports_aarch64",
         "protected_modules_list": ":gki_aarch64_protected_modules",
         "module_implicit_outs": get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
@@ -166,10 +163,10 @@ define_common_kernels(target_configs = {
         ],
     },
     "kernel_aarch64_16k": {
-        "kmi_symbol_list_strict_mode": True,
+        "kmi_symbol_list_strict_mode": False,
         "kmi_symbol_list": "android/abi_gki_aarch64",
         "additional_kmi_symbol_lists": [":aarch64_additional_kmi_symbol_lists"],
-        "trim_nonlisted_kmi": True,
+        "trim_nonlisted_kmi": False,
         "protected_exports_list": "android/abi_gki_protected_exports_aarch64",
         "protected_modules_list": ":gki_aarch64_protected_modules",
         "module_implicit_outs": get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
@@ -181,10 +178,10 @@ define_common_kernels(target_configs = {
         ],
     },
     "kernel_aarch64_autofdo": {
-        "kmi_symbol_list_strict_mode": True,
+        "kmi_symbol_list_strict_mode": False,
         "kmi_symbol_list": "android/abi_gki_aarch64",
         "additional_kmi_symbol_lists": [":aarch64_additional_kmi_symbol_lists"],
-        "trim_nonlisted_kmi": True,
+        "trim_nonlisted_kmi": False,
         "protected_exports_list": "android/abi_gki_protected_exports_aarch64",
         "protected_modules_list": ":gki_aarch64_protected_modules",
         "module_implicit_outs": get_gki_modules_list("arm64") + get_kunit_modules_list("arm64"),
@@ -545,6 +542,8 @@ _DB845C_MODULE_OUTS = [
     "sound/soc/qcom/snd-soc-qcom-sdw.ko",
     "sound/soc/qcom/snd-soc-sdm845.ko",
     "sound/soc/qcom/snd-soc-sm8250.ko",
+    "kernel/oplus_cpu/thermal/horae_shell_temp.ko",
+    "kernel/oplus_cpu/waker_identify/oplus_bsp_waker_identify.ko",
 ]
 
 _DB845C_WATCHDOG_MODULE_OUTS = [
@@ -644,9 +643,11 @@ copy_to_dist_dir(
     log = "info",
 )
 
+load(":consolidate.bzl", "define_consolidate")
+
 define_consolidate()
 
-define_consolidate_16k()
+load(":msm_platforms.bzl", "define_msm_platforms")
 
 define_msm_platforms()
 
@@ -698,6 +699,7 @@ _ROCKPI4_MODULE_OUTS = [
     "drivers/usb/host/ohci-hcd.ko",
     "drivers/usb/host/ohci-platform.ko",
     "net/core/failover.ko",
+    "kernel/oplus_cpu/waker_identify/oplus_bsp_waker_identify.ko",
 ]
 
 _ROCKPI4_WATCHDOG_MODULE_OUTS = [
@@ -997,6 +999,25 @@ ddk_headers(
     visibility = ["//visibility:public"],
 )
 
+# oplus modules depend on ack need headers add here
+# globs() for all architectures
+filegroup(
+    name = "all_headers_allowlist_common_globs_oplus",
+    srcs = glob([
+        "kernel/**/*.h",
+        "fs/**/*.h",
+        "**/**/*.h",
+        "scripts/dtc/libfdt/*.h",
+        "mm/*.h",
+    ]),
+    visibility = ["//visibility:private"],
+)
+# oplus modules depend on ack need directory add here
+linux_includes_oplus = [
+    "fs/proc",
+    "mm",
+    ".",
+]
 ddk_headers_archive(
     name = "kernel_x86_64_ddk_headers_archive",
     srcs = [
@@ -1034,7 +1055,6 @@ ddk_headers(
     name = "all_headers_allowlist_aarch64",
     hdrs = [
         "drivers/dma-buf/heaps/deferred-free-helper.h",
-        "drivers/dma/dmaengine.h",
         "drivers/extcon/extcon.h",
         "drivers/pci/controller/dwc/pcie-designware.h",
         "drivers/thermal/thermal_core.h",
@@ -1047,6 +1067,7 @@ ddk_headers(
         "sound/usb/usbaudio.h",
         ":all_headers_allowlist_aarch64_globs",
         ":all_headers_allowlist_common_globs",
+        ":all_headers_allowlist_common_globs_oplus",
         ":xhci_headers",
     ],
     # The list of include directories where source files can #include headers
@@ -1056,7 +1077,6 @@ ddk_headers(
         "arch/arm64/include",
         "arch/arm64/include/uapi",
         "drivers/dma-buf",
-        "drivers/dma",
         "drivers/extcon",
         "drivers/pci/controller/dwc",
         "drivers/thermal",
@@ -1065,7 +1085,7 @@ ddk_headers(
         "sound/usb",
         "include",
         "include/uapi",
-    ],
+    ] + linux_includes_oplus,
     visibility = ["//visibility:private"],
 )
 

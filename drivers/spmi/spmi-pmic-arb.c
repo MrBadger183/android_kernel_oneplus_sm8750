@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved. */
-/* Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <linux/bitmap.h>
 #include <linux/debugfs.h>
@@ -20,8 +20,6 @@
 #include <linux/spmi.h>
 #include <linux/string.h>
 #include <linux/soc/qcom/spmi-pmic-arb.h>
-
-#define SPMI_MAX_MASTER_ID		0x03
 
 /* PMIC Arbiter configuration registers */
 #define PMIC_ARB_VERSION		0x0000
@@ -145,7 +143,6 @@ struct apid_data {
  * @irq:		PMIC ARB interrupt.
  * @ee:			the current Execution Environment
  * @bus_instance:	on v7: 0 = primary SPMI bus, 1 = secondary SPMI bus
- * @mid:		SPMI master ID
  * @min_apid:		minimum APID (used for bounding IRQ search)
  * @max_apid:		maximum APID
  * @base_apid:		on v7: minimum APID associated with the particular SPMI
@@ -176,7 +173,6 @@ struct spmi_pmic_arb {
 	int			irq;
 	u8			ee;
 	u32			bus_instance;
-	u8			mid;
 	u16			min_apid;
 	u16			max_apid;
 	u16			base_apid;
@@ -572,7 +568,6 @@ enum qpnpint_regs {
 	QPNPINT_REG_EN_SET		= 0x15,
 	QPNPINT_REG_EN_CLR		= 0x16,
 	QPNPINT_REG_LATCHED_STS		= 0x18,
-	QPNPINT_REG_MID_SEL		= 0x1A,
 };
 
 struct spmi_pmic_arb_qpnpint_type {
@@ -857,13 +852,6 @@ static int qpnpint_irq_domain_activate(struct irq_domain *domain,
 			pmic_arb->apid_data[apid].irq_ee);
 		return -ENODEV;
 	}
-
-	/*
-	 * Make sure the interrupt is assigned to this SOC by writing the
-	 * MID value to MID_SEL register.
-	 */
-	if (pmic_arb->mid <= SPMI_MAX_MASTER_ID)
-		qpnpint_spmi_write(d, QPNPINT_REG_MID_SEL, &pmic_arb->mid, 1);
 
 	buf = BIT(irq);
 	qpnpint_spmi_write(d, QPNPINT_REG_EN_CLR, &buf, 1);
@@ -1707,7 +1695,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *core;
 	u32 *mapping_table;
-	u32 channel, ee, hw_ver, mid = 0;
+	u32 channel, ee, hw_ver;
 	int err;
 
 	ctrl = spmi_controller_alloc(&pdev->dev, sizeof(*pmic_arb));
@@ -1874,8 +1862,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 		goto err_put_ctrl;
 	}
 
-	pmic_arb->cnfg = devm_ioremap(&ctrl->dev, res->start,
-				      resource_size(res));
+	pmic_arb->cnfg = devm_ioremap_resource(&ctrl->dev, res);
 	if (IS_ERR(pmic_arb->cnfg)) {
 		err = PTR_ERR(pmic_arb->cnfg);
 		goto err_put_ctrl;
@@ -1917,22 +1904,6 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	}
 
 	pmic_arb->ee = ee;
-
-	pmic_arb->mid = SPMI_MAX_MASTER_ID + 1;
-	/* Read SPMI master ID of this controller. Supported values: 0-3 */
-	err = of_property_read_u32(pdev->dev.of_node, "qcom,mid", &mid);
-	if (err && err != -EINVAL) {
-		dev_err(&pdev->dev, "error reading qcom,mid, ret=%d\n", err);
-		goto err_put_ctrl;
-	} else if (!err) {
-		if (mid > SPMI_MAX_MASTER_ID) {
-			dev_err(&pdev->dev, "invalid MID (%u) specified\n", mid);
-			err = -EINVAL;
-			goto err_put_ctrl;
-		}
-		pmic_arb->mid = mid;
-	}
-
 	mapping_table = devm_kcalloc(&ctrl->dev, pmic_arb->max_periphs,
 					sizeof(*mapping_table), GFP_KERNEL);
 	if (!mapping_table) {
