@@ -40,15 +40,15 @@ Designed for power users, security researchers, and mobile penetration testers, 
 ## 📱 Compatibility Notice
 Tested and validated on:
 * **OnePlus 13** (`dodge` / `CPH2649`, `CPH2653`, `CPH2655`)
-* **EvolutionX / SunOS / AOSP Android 15 & Android 16**
-* **ColorOS 15 / OxygenOS 15**
+* **OxygenOS 16/Android 16**
 
 > [!NOTE]
 > If building for specific custom ROMs with strict module verification or specific seccomp policies:
 > - `CONFIG_FHANDLE` should be set to `n`
 > - `CONFIG_SYSVIPC` should be set to `n`
 > - `CONFIG_MODULE_FORCE_UNLOAD` should be set to `n`
-
+> - When building the kernel with a custom ROM lineage based, PRODUCT_OTA_ENFORCE_VINTF_KERNEL_REQUIREMENTS := false must
+> - be set in the device/sm8750-common/common.mk file to bypass the VF_Compatibility checks the build verifies against. 
 ---
 
 ## ⚡ How to Flash
