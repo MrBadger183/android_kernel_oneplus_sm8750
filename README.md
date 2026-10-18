@@ -159,9 +159,9 @@ External Wi-Fi and CAN bus modules are provided in `BadgerHunter-OP13-NetHunter-
 ---
 
 ## 🙏 Credits & Acknowledgments
-* **Qualcomm & OnePlusOSS** for base kernel sources.
+* **Qualcomm & OnePlusOSS** / For the kernel manifest that brought all this about with the base kernel sources.
 * **KernelSU-Next Project** for modern, secure kernel-level su.
 * **simonsmh / SuSFS** for the revolutionary stealth root filesystem.
 * **Offensive Security / Kali NetHunter** for wireless injection patches.
-* **OnePlusOSS** / For the kernel manifest that brought all this about.
+* Open Source Community for all the hard work that is done in your free time and as your full-time jobs. Thank you.
 * **MrBadger183** - Lead maintainer & developer.
