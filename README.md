@@ -1,4 +1,4 @@
-# BadgerHunter Kernel for OnePlus 13 (SM8750 / Snapdragon 8 Elite)
+# BadgerHunter Kernel for OnePlus 13  (SM8750 / Snapdragon 8 Elite)
 
 BadgerHunter is a high-performance, security-auditing, and penetration-testing kernel for the **OnePlus 13** (Codename: `dodge`, Platform: `sm8750` / Qualcomm Snapdragon 8 Elite).
 
